@@ -47,6 +47,23 @@ class ReleaseScriptTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError,'already PUBLISHED'):
                 release.upload_draft('v0.0.39','mujtabax18/dayark',[],'0.0.39')
 
+    def test_linux_appimage_requires_zsync(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            (root/'build/linux/x64/release/bundle').mkdir(parents=True)
+            (root/'build/linux/x64/release/bundle/metersystem').write_bytes(b'executable')
+            (root/'dist').mkdir()
+            with mock.patch.object(release,'ROOT',root), \
+                 mock.patch.object(release.platform,'system',return_value='Linux'), \
+                 mock.patch.object(release.platform,'machine',return_value='x86_64'), \
+                 mock.patch.object(release.shutil,'which',return_value='/usr/bin/appimagetool'), \
+                 mock.patch.object(release,'run') as build:
+                def create_only_appimage(*args):
+                    (root/'dist/DayArk-x86_64.AppImage').write_bytes(b'ELF')
+                build.side_effect=create_only_appimage
+                with self.assertRaisesRegex(RuntimeError,r'without .zsync'):
+                    release.build_linux(root/'dist/v0.0.39', '0.0.39')
+
     def test_linux_bundle_without_appimagetool(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp)

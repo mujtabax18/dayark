@@ -118,8 +118,9 @@ def build_linux(out: Path, version: str) -> list[Path]:
         if not appimage_src.is_file():
             raise RuntimeError("AppImage packaging did not produce its expected file")
         files.append(Path(shutil.copy2(appimage_src, out / appimage_src.name)))
-        if zsync_src.is_file():
-            files.append(Path(shutil.copy2(zsync_src, out / zsync_src.name)))
+        if not zsync_src.is_file() or zsync_src.stat().st_size == 0:
+            raise RuntimeError("AppImage created without .zsync; install zsync/zsyncmake and rebuild.")
+        files.append(Path(shutil.copy2(zsync_src, out / zsync_src.name)))
     return files
 
 
@@ -214,7 +215,8 @@ def upload_draft(tag: str, repo: str, assets: list[Path], version: str) -> None:
                     "--json", "isDraft", "--jq", ".isDraft", capture=True)
         if draft.lower() != "true":
             raise RuntimeError("The created GitHub release is not a draft; refusing upload.")
-    run("gh", "release", "upload", tag, *(str(asset) for asset in assets), "-R", repo)
+    # Existing drafts can be safely rebuilt; prevent duplicate asset upload failures.
+    run("gh", "release", "upload", tag, *(str(asset) for asset in assets), "--clobber", "-R", repo)
     print(f"DRAFT updated: https://github.com/{repo}/releases (not published)")
 
 
