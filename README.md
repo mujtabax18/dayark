@@ -1,131 +1,133 @@
 <p align="center">
-  <img src="logo.png" alt="DayArk Logo" width="180">
+  <img src="logo.png" alt="DayArk logo" width="250" />
 </p>
 
-<h1 align="center">DayArk Releases</h1>
-
+<h1 align="center">DayArk</h1>
+<p align="center"><strong>Plan it. Record it. Remember it. Keep it yours.</strong></p>
+<p align="center">A free, open-source, local-first personal life companion built with Flutter.</p>
 <p align="center">
-  <strong>Your private life, in one place.</strong><br>
-  Plan it. Record it. Remember it. Keep it yours.
+  <a href="https://github.com/mujtabax18/dayark/releases">Download releases</a> ·
+  <a href="CONTRIBUTING.md">Contribute</a> ·
+  <a href="ROADMAP.md">Roadmap</a> ·
+  <a href="WHY_DAYARK.md">Why I built it</a>
 </p>
 
-Official release repository for **DayArk**.
+> **Open-source transition — v0.0.39:** DayArk started as my private project. I'm opening its source so people can inspect it, use it, learn from it, and improve it. This repository is being prepared for public release with a full Flutter project and an MIT license. Check [open-source readiness](OPEN_SOURCE_READINESS.md) before publishing binaries or making claims of verified builds.
 
-DayArk is a private, local-first personal life management app for keeping everyday information in one place, including diary entries, tasks, habits, reminders, expenses, loans, notes, documents, and other personal records.
+## What is DayArk?
 
-> **This repository is for application releases only. The DayArk source code is not published here.**
+DayArk is an application for the small, practical things that make up a life: tasks, memories, people, finances, documents, routines and records. It is designed to work with information stored on **your own devices**, instead of requiring a subscription just to organize your day.
 
-## Download DayArk
+It is not one perfectly polished application. It is a collection of tools I kept building because I needed them. Some areas are more mature than others. My goal is to make those tools useful, reliable, and accessible to anyone who wants them.
 
-Open the **Releases** section of this repository and download the latest available build for your device.
+### What is in the current code?
 
-For Android, download the `.apk` file attached to the newest release.
+| Area | Features present in the supplied source |
+| --- | --- |
+| Daily life | Diary, habits, planning, chores/groceries, reminders, quotations, customizable home screens |
+| Money and records | Expenses, loans/khata, invoices, meter records, reports |
+| Life Archive | People, family relationships, connected life events, memories, photo albums, a visual relationship canvas |
+| Media and documents | Media library/viewers, audio/video handling, scanner, PDF viewing/editing tools, linked memory albums and scanned documents |
+| Privacy and portability | Local database using Drift/SQLite, password-protected portable backups, older-backup compatibility |
+| Device connections | Local-network pairing and incremental synchronization, with TLS certificate pinning in the provided implementation |
+| Personalization | Light/dark appearance and five accent presets: Indigo, Emerald, Ocean, Sunset and Rose |
 
-## Installing on Android
+**A feature appearing in the source is not a claim that every flow is bug-free or supported on every operating system.** Some features may need polish, real-device testing, or platform-specific dependencies. See [Open-source readiness](OPEN_SOURCE_READINESS.md).
 
-1. Download the latest DayArk APK from the **Releases** section.
-2. Open the downloaded APK.
-3. Android may ask you to allow installation from this source.
-4. Allow it only for the browser or file manager you used to download DayArk.
-5. Continue with the installation.
+## Life Archive: the feature closest to my heart
 
-If DayArk is already installed, installing a newer official APK should update the existing app while keeping its local data, provided the application ID and signing key remain unchanged.
+One of the newer features is **Life Archive**. I sometimes struggle to remember the names of people around me, and I wanted somewhere I could record who someone is, how we know each other, and the memories that connect us.
 
-## Updating DayArk
+You can organize people and relationships, create visual connections, and add memories, albums and life events. I want this to become a place to remember the people and moments that matter—not just another address book.
 
-When a new version is available:
+## Why I am making DayArk open source
 
-1. Download the latest APK from this repository.
-2. Open the downloaded file.
-3. Choose **Update** when Android prompts you.
-4. Your existing DayArk installation will be upgraded.
+I began DayArk about **two years ago**, as a personal project. As AI development tools became available to me, I also used them to help build and improve it. I kept adding features whenever I thought, *this could make my own life easier.* Many of these features are things I actually use.
 
-You normally do **not** need to uninstall the previous version.
+People around me weren't especially interested in using an app like this. That's okay. I still wanted to put it out into the world. If even one person finds it useful, or discovers a new possibility for Flutter by reading the code, that would make me happy.
 
-> Do not uninstall DayArk before updating unless a release note specifically tells you to do so. Uninstalling an app can remove locally stored application data.
+I know some of the code is messy. The UI isn't where I want it to be. I'm a developer, not a designer, and this is a real personal project—not a polished product built by a large team. But it works for me, and I'd rather share something imperfect and useful than keep it hidden.
 
-## Before Updating
+**I want people to be able to use their own devices fully, without needing subscriptions for every small tool.** I'm not against subscriptions or paid software. I simply believe there should be a free, local-first option too.
 
-DayArk is designed as a **local-first** application, which means important information may be stored directly on your device.
+If this helps you and you'd like to help me, you can contribute in whatever way you can: fix a bug, improve a screen, test a feature, write documentation, suggest an idea, or just tell someone about it. I believe people make life better by helping each other.
 
-Before installing a major update, it is recommended that you create a DayArk backup from inside the app.
+Maybe nobody will ever read this far down my GitHub page. I'm writing it anyway. Maybe someone finds it someday. Maybe that's just a dream—but it's a dream I want to share.
 
-Keep important backups somewhere separate from the device when possible.
+**Thank you for being here. — @mujtabax18**
 
-## Release Notes
+Read the longer note: [Why DayArk exists](WHY_DAYARK.md).
 
-Every release may include:
+## Download and install
 
-- New features
-- UI and usability improvements
-- Bug fixes
-- Performance improvements
-- Compatibility updates
-- Database or backup improvements
+See the [latest GitHub release](https://github.com/mujtabax18/dayark/releases) for **actual available assets**. Recent releases supplied Android APKs and Linux AppImages; the existence of cross-platform source code does not mean that a signed installer is published for every platform.
 
-Please read the notes attached to a release before installing it, especially when the release contains important migration or backup instructions.
+**Android:** Download the official `DayArk.apk`, open it and approve installation from that source if Android asks. Install updates over the existing app with the same package ID and signing certificate. **Do not uninstall first**; local app data could be deleted.
 
-## Versioning
+**Linux:** Download the official `DayArk-x86_64.AppImage`, make it executable (`chmod +x DayArk-x86_64.AppImage`), and run it. AppImage compatibility depends on your distribution and system libraries.
 
-Releases use version numbers such as:
+**Before upgrading:** Make a DayArk backup and store a copy somewhere safe. If the release changes sync or database behavior, follow its migration instructions. Do not lose your backup password.
 
-`v1.0.0`
+## Build from source
 
-A typical release may contain:
+DayArk uses Flutter/Dart and the internal package import name **`metersystem`**. That legacy identifier is kept in the existing source for compatibility; changing it without planning can break imports or installed-app upgrade paths.
 
-- **Major** — significant application or data-model changes
-- **Minor** — new features and improvements
-- **Patch** — fixes and smaller updates
+This source tree includes `pubspec.yaml`, required assets and native projects. Use Flutter **3.47.9** (see `.fvmrc`) and platform-specific build prerequisites:
 
-Pre-release builds may be marked as beta or testing versions.
+```bash
+git clone https://github.com/mujtabax18/dayark.git
+cd dayark
+flutter doctor
+flutter pub get
+flutter analyze
+# Run on a configured, supported device, for example:
+flutter run -d linux
+```
 
-## Verify the Source
+For Android debug builds, run `flutter run -d <device-id>` on a configured device. Contributors **do not need the maintainer's Android signing keys** for debug mode. Android **release** builds need private signing files, described in [release automation](docs/RELEASE_AUTOMATION.md). This source has not been compiled in every target environment; see [OPEN_SOURCE_READINESS.md](OPEN_SOURCE_READINESS.md) for tested versus untested status.
 
-For your security, download DayArk only from an official DayArk release location provided by the developer.
+### Build release packages and create a GitHub draft
 
-Do not install modified APKs or APK files redistributed by unknown third parties.
+DayArk includes one cross-platform Python script that can build a Linux/Windows desktop package, optionally build a signed Android APK on either host, and **optionally upload these to an unpublished GitHub draft**:
 
-When checksums are provided with a release, they can be used to verify that the downloaded file has not been changed.
+```bash
+# Linux: asks whether to include Android, and optionally upload
+python3 scripts/release.py
 
-## Privacy
+# Windows PowerShell (run on Windows)
+py -3 scripts/release.py
+```
 
-DayArk is built around a local-first approach.
+Outputs go into `dist/v0.0.39/` and are intentionally excluded from Git. To create a draft in GitHub without building locally, use **Actions → Build DayArk draft release → Run workflow**. See the complete [free setup and GitHub Actions guide](docs/RELEASE_AUTOMATION.md). **Drafts are not publicly released or used by the in-app updater** until you manually publish them.
 
-Your personal records are intended to remain under your control on your device unless you explicitly use a feature that exports, backs up, shares, or synchronizes data.
+## How data and network access work
 
-Because this repository is public-facing, **never post personal DayArk backups, databases, diary exports, documents, or other private information in GitHub Issues or Discussions.**
+- **Local-first:** Core personal information is designed to live in the application's local database.
+- **Backups:** Portable password-protected backup and restore paths are implemented. Keep a backup off-device; safeguard its password.
+- **Local sync:** Device pairing and encrypted network synchronization are implemented for devices on a LAN. Pairing and version compatibility matter.
+- **Optional online behavior:** Update checking and an online quotation library use the internet. Update checks may run at startup unless disabled in Settings. Don't interpret *local-first* as *never makes a network connection*.
+- **Privacy and security:** Source visibility is valuable, but it is not a substitute for review and testing. Please report security issues privately; see [SECURITY.md](SECURITY.md).
 
-## Reporting a Problem
+**Never upload your personal database, backup file, diary entry, IDs, family photos, financial records, or passwords to a public GitHub issue.**
 
-If you encounter a problem with a release, include information such as:
+## What's next?
 
-- DayArk version
-- Android version
-- Device model
-- What you were doing when the problem occurred
-- Steps to reproduce the issue
-- Screenshot of the error, if appropriate
+I'm especially interested in a **local AI assistant**, LAN chat with file sharing, local calling, a secure password manager, a simple Google Keep-style notepad, stronger task/alarm tools, better PDF and media tools, radio, faster performance, and better-looking themes and layouts. These are **ideas**, not promises or release dates. Some adjacent building blocks are already present.
 
-Do **not** include passwords, private diary content, financial information, backup files, personal documents, or other sensitive data.
+See the [roadmap](ROADMAP.md) for the distinction between available features and proposed work.
 
-## Repository Purpose
+## Contributing
 
-This repository may contain:
+You do not have to be an experienced Flutter developer to help. Bug reports, UI/UX work (especially welcome!), translations, accessibility improvements, performance profiling, documentation and tests are all useful.
 
-- Official DayArk release packages
-- Release notes
-- Installation information
-- Update instructions
-- Public release-related documentation
+Read [CONTRIBUTING.md](CONTRIBUTING.md), and open a discussion or issue before taking on a large redesign. Please respect people's private information when sharing reproductions or screenshots.
 
-This repository does **not** contain the DayArk application source code.
+## License
 
-## License and Source Code
+The source in the new open-source release is proposed under the **MIT License**—see [LICENSE](LICENSE). MIT permits use, modification and redistribution, including commercial use, subject to its conditions. It does **not** require modified versions to remain open source. If that is not the intended policy, choose a different license **before publishing** and review the licenses of all included assets/dependencies.
 
-DayArk is proprietary software unless explicitly stated otherwise by the developer.
+Previous proprietary release notices referred to older distributions. The new source license applies to files the maintainer has authority to publish under it; it is not a grant of rights to independently owned third-party assets.
 
-The availability of compiled application packages in this repository does not grant permission to copy, modify, redistribute, reverse engineer, resell, or claim ownership of DayArk or its source code except where applicable law requires otherwise.
+---
 
-## About DayArk
-
-DayArk is a private, local-first personal life management app designed to keep everyday information organized and under your control.
+*Built with Flutter. Built for everyday life. Shared in the hope that it might help someone.*

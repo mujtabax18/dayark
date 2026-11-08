@@ -1,0 +1,190 @@
+name: Build DayArk draft release
+
+# Manual only. Never publishes or runs on a PR/push.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (must match pubspec.yaml, e.g. v0.0.39)'
+        required: true
+        default: 'v0.0.39'
+        type: string
+      desktop:
+        description: 'Desktop builds to run'
+        required: true
+        default: both
+        type: choice
+        options:
+          - both
+          - linux
+          - windows
+          - none
+      android:
+        description: 'Build signed Android APK (requires secrets configured below)'
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: write # GITHUB_TOKEN may create a DRAFT and attach artifacts.
+
+concurrency:
+  group: dayark-draft-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  prepare-draft:
+    name: Create or verify unpublished draft
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check release tag against pubspec
+        run: python3 scripts/release.py --dry-run --tag "$RELEASE_TAG" --android no
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+      - name: Create DRAFT if needed (never publish)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          RELEASE_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft > /tmp/draft_state 2>/dev/null; then
+            if [[ "$(cat /tmp/draft_state)" != "true" ]]; then
+              echo "Release $RELEASE_TAG is published. Refusing to modify." >&2
+              exit 1
+            fi
+            echo "Using existing draft $RELEASE_TAG"
+          else
+            NOTES="GITHUB_RELEASE_${RELEASE_TAG}.md"
+            if [[ -f "$NOTES" ]]; then
+              gh release create "$RELEASE_TAG" --draft --target "$RELEASE_SHA" --title "DayArk $RELEASE_TAG" --notes-file "$NOTES"
+            else
+              gh release create "$RELEASE_TAG" --draft --target "$RELEASE_SHA" --title "DayArk $RELEASE_TAG" --notes "Draft build. Review before publishing."
+            fi
+            [[ "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)" == "true" ]] || exit 1
+          fi
+
+  linux:
+    name: Linux x64 bundle
+    if: ${{ inputs.desktop == 'both' || inputs.desktop == 'linux' }}
+    needs: prepare-draft
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Linux Flutter build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libsecret-1-dev
+      - name: Install verified AppImage packaging tool (pinned release)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tool_dir="$RUNNER_TEMP/dayark-tools"
+          mkdir -p "$tool_dir"
+          gh release download 1.9.1 -R AppImage/appimagetool \
+            -p 'appimagetool-x86_64.AppImage' -D "$tool_dir"
+          digest="$(gh api repos/AppImage/appimagetool/releases/tags/1.9.1 \
+            --jq '.assets[] | select(.name == "appimagetool-x86_64.AppImage") | .digest')"
+          [[ "$digest" == sha256:* ]] || { echo 'Cannot verify appimagetool digest' >&2; exit 1; }
+          printf '%s  %s\n' "${digest#sha256:}" "$tool_dir/appimagetool-x86_64.AppImage" | sha256sum -c -
+          chmod +x "$tool_dir/appimagetool-x86_64.AppImage"
+          cat > "$tool_dir/appimagetool" <<'WRAPPER'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          export APPIMAGE_EXTRACT_AND_RUN=1
+          exec "$(dirname "$0")/appimagetool-x86_64.AppImage" "$@"
+          WRAPPER
+          chmod +x "$tool_dir/appimagetool"
+          echo "$tool_dir" >> "$GITHUB_PATH"
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version-file: .fvmrc
+          cache: true
+      - name: Build, package, and add to the existing draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: python3 scripts/release.py --platform linux --android no --upload --tag "$RELEASE_TAG"
+      # Produces the ZIP plus AppImage for DayArk's in-app update mechanism.
+      # A zsync file is attached if appimagetool emits one.
+
+  windows:
+    name: Windows x64 bundle
+    if: ${{ inputs.desktop == 'both' || inputs.desktop == 'windows' }}
+    needs: prepare-draft
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version-file: .fvmrc
+          cache: true
+      - name: Install Windows installer builder (Inno Setup 6)
+        shell: pwsh
+        run: |
+          $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup --no-progress -y
+            if ($LASTEXITCODE -ne 0) { throw 'Inno Setup installation failed' }
+          }
+          if (-not (Test-Path $iscc)) { throw 'ISCC.exe not found after install' }
+      - name: Build, package, and add to existing draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        shell: pwsh
+        run: py -3 scripts/release.py --platform windows --android no --upload --tag $env:RELEASE_TAG
+      # Produces the ZIP plus Inno Setup .exe for DayArk's in-app updater.
+
+  android:
+    name: Android signed APK
+    if: ${{ inputs.android }}
+    needs: prepare-draft
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Install Android SDK platform
+        run: sdkmanager 'platforms;android-37'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version-file: .fvmrc
+          cache: true
+      - name: Restore private signing files from encrypted GitHub secrets
+        env:
+          DAYARK_KEYSTORE_B64: ${{ secrets.DAYARK_KEYSTORE_B64 }}
+          DAYARK_KEY_PROPERTIES_B64: ${{ secrets.DAYARK_KEY_PROPERTIES_B64 }}
+        run: |
+          python3 - <<'PY'
+          import base64, os
+          from pathlib import Path
+          for secret, dest in (
+              ('DAYARK_KEYSTORE_B64', Path('android/app/dayark-keystore.jks')),
+              ('DAYARK_KEY_PROPERTIES_B64', Path('android/key.properties')),
+          ):
+              encoded = os.environ.get(secret, '')
+              if not encoded:
+                  raise SystemExit(f'Missing GitHub Actions secret: {secret}')
+              dest.parent.mkdir(parents=True, exist_ok=True)
+              dest.write_bytes(base64.b64decode(encoded, validate=True))
+          PY
+      - name: Build signed APK and add to existing draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: python3 scripts/release.py --platform android --android yes --upload --tag "$RELEASE_TAG"

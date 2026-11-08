@@ -1,0 +1,915 @@
+[
+  {
+    "original_file": "lib/screens/Multimedia/MultimediaDashboard.dart",
+    "original_lines": 3204,
+    "entrypoint_lines": 39,
+    "parts": [
+      "lib/screens/Multimedia/parts/multimedia_dashboard_state.dart",
+      "lib/screens/Multimedia/parts/multimedia_dashboard_view_mode_toggle.dart",
+      "lib/screens/Multimedia/parts/multimedia_dashboard_collection_empty_state.dart",
+      "lib/screens/Multimedia/parts/multimedia_dashboard_media_collections_sheet_state.dart",
+      "lib/screens/Multimedia/parts/multimedia_dashboard_media_card.dart"
+    ],
+    "part_lines": [
+      1621,
+      431,
+      364,
+      419,
+      351
+    ],
+    "sha256_original": "b3d937ce21f6f36c3bd0b6f993728e961ed3c7df94e162abee4443db05f53409",
+    "sha256_lossless_chunks": "b3d937ce21f6f36c3bd0b6f993728e961ed3c7df94e162abee4443db05f53409",
+    "retained_declarations": [
+      "_MediaHomeView",
+      "MultimediaDashboard"
+    ],
+    "part_declarations": [
+      [
+        "_MultimediaDashboardState"
+      ],
+      [
+        "_ViewModeToggle",
+        "_ViewModeButton",
+        "_DesktopSectionLabel",
+        "_DesktopMediaNavItem",
+        "_DesktopStatCard",
+        "_SystemCollectionCard",
+        "_CreateCollectionCard"
+      ],
+      [
+        "_CollectionEmptyState",
+        "_CollectionGalleryCard",
+        "_CollectionPreviewMosaic",
+        "_CollectionPreviewCell",
+        "_CollectionPreviewPlaceholder",
+        "_ImportActionTile",
+        "_EmbeddedDesktopNavigator",
+        "_EmbeddedDesktopNavigatorState",
+        "_DesktopDetailObserver",
+        "_MediaCollectionsSheet"
+      ],
+      [
+        "_MediaCollectionsSheetState",
+        "_MediaCollectionPicker"
+      ],
+      [
+        "_MediaCard",
+        "_MediaTypePlaceholder",
+        "_StatItem",
+        "_MessageState",
+        "_MediaTrashScreen"
+      ]
+    ]
+  },
+  {
+    "original_file": "lib/screens/quotation/view/QuotesScreen.dart",
+    "original_lines": 3076,
+    "entrypoint_lines": 50,
+    "parts": [
+      "lib/screens/quotation/view/parts/quotes_screen_state.dart",
+      "lib/screens/quotation/view/parts/quotes_screen_desktop_quotation_prompt_builder_page.dart",
+      "lib/screens/quotation/view/parts/quotes_screen_desktop_paste_generated_quotations_page_state.dart",
+      "lib/screens/quotation/view/parts/quotes_screen_desktop_quotation_form_page.dart",
+      "lib/screens/quotation/view/parts/quotes_screen_quotation_card.dart"
+    ],
+    "part_lines": [
+      1522,
+      419,
+      452,
+      376,
+      278
+    ],
+    "sha256_original": "35a41652255b6a3f4e017aec4de14db7eb5feeee6fd850b5c58b9a2e239e48dd",
+    "sha256_lossless_chunks": "35a41652255b6a3f4e017aec4de14db7eb5feeee6fd850b5c58b9a2e239e48dd",
+    "retained_declarations": [
+      "QuotesScreen"
+    ],
+    "part_declarations": [
+      [
+        "QuotesScreenState"
+      ],
+      [
+        "_DesktopQuotationPromptBuilderPage",
+        "_DesktopQuotationPromptBuilderPageState",
+        "_DesktopPasteGeneratedQuotationsPage"
+      ],
+      [
+        "_DesktopPasteGeneratedQuotationsPageState",
+        "_DesktopGeneratedQuotationReviewPage",
+        "_DesktopGeneratedQuotationReviewPageState"
+      ],
+      [
+        "_DesktopQuotationFormPage",
+        "_DesktopQuotationFormPageState",
+        "_HeroCard",
+        "_HeroStat"
+      ],
+      [
+        "_QuotationCard",
+        "_CardAction",
+        "_SmallAction",
+        "_EmptyState"
+      ]
+    ]
+  },
+  {
+    "original_file": "lib/screens/invoices/view/InvoiceFormScreen.dart",
+    "original_lines": 2094,
+    "entrypoint_lines": 43,
+    "parts": [
+      "lib/screens/invoices/view/parts/invoice_form_screen_state.dart",
+      "lib/screens/invoices/view/parts/invoice_form_screen_business_selection_sheet.dart"
+    ],
+    "part_lines": [
+      1828,
+      232
+    ],
+    "sha256_original": "a78b20f75ee983a93043689decbb8612a37c67b350d3439a24776d9d6bb3b45b",
+    "sha256_lossless_chunks": "a78b20f75ee983a93043689decbb8612a37c67b350d3439a24776d9d6bb3b45b",
+    "retained_declarations": [
+      "InvoiceFormScreen"
+    ],
+    "part_declarations": [
+      [
+        "_InvoiceFormScreenState"
+      ],
+      [
+        "_BusinessSelectionSheet",
+        "_BusinessSelectionSheetState",
+        "_CustomerSelectionSheet",
+        "_CustomerSelectionSheetState"
+      ]
+    ]
+  },
+  {
+    "original_file": "lib/screens/Expenses/view/ExpensesTitle.dart",
+    "original_lines": 1653,
+    "entrypoint_lines": 43,
+    "parts": [
+      "lib/screens/Expenses/view/parts/expenses_title_expenses_titles_page_state.dart",
+      "lib/screens/Expenses/view/parts/expenses_title_desktop_expense_workspace.dart",
+      "lib/screens/Expenses/view/parts/expenses_title_desktop_expense_overview.dart",
+      "lib/screens/Expenses/view/parts/expenses_title_category_card.dart"
+    ],
+    "part_lines": [
+      537,
+      376,
+      423,
+      291
+    ],
+    "sha256_original": "a07a6801c32c774d7fb037c3a2f9cb86d7c163b7f6fe8d3d4256f89d3b7001e5",
+    "sha256_lossless_chunks": "a07a6801c32c774d7fb037c3a2f9cb86d7c163b7f6fe8d3d4256f89d3b7001e5",
+    "retained_declarations": [
+      "ExpensesTitlesPage"
+    ],
+    "part_declarations": [
+      [
+        "_ExpensesTitlesPageState"
+      ],
+      [
+        "_DesktopExpenseWorkspace",
+        "_ExpenseWorkspaceNavItem",
+        "_ExpenseWorkspaceCategoryItem"
+      ],
+      [
+        "_DesktopExpenseOverview",
+        "_DesktopCategoryHeader",
+        "_DesktopCategoryRow"
+      ],
+      [
+        "_CategoryCard",
+        "_AmountLabel",
+        "_HiddenCategoriesBanner",
+        "_EmptyCategories"
+      ]
+    ]
+  },
+  {
+    "original_file": "lib/screens/Settings/view/backupScreen.dart",
+    "original_lines": 1601,
+    "entrypoint_lines": 37,
+    "parts": [
+      "lib/screens/Settings/view/parts/backup_screen_setting_screen.dart",
+      "lib/screens/Settings/view/parts/backup_screen_delete_all_database_dialog.dart"
+    ],
+    "part_lines": [
+      1231,
+      342
+    ],
+    "sha256_original": "85340b6d0670bfe4a3df0dcf3000e618a2f69b169cd96672d8a6433095c8d032",
+    "sha256_lossless_chunks": "85340b6d0670bfe4a3df0dcf3000e618a2f69b169cd96672d8a6433095c8d032",
+    "retained_declarations": [],
+    "part_declarations": [
+      [
+        "SettingScreen"
+      ],
+      [
+        "_DeleteAllDatabaseDialog",
+        "_DeleteAllDatabaseDialogState",
+        "_SettingsSection",
+        "_SettingsResponsiveFrame",
+        "_SettingsDesktopIndex",
+        "_SettingsIndexItem"
+      ]
+    ]
+  },
+  {
+    "original_file": "lib/screens/habitTracker/view/HabitDetailScreen.dart",
+    "original_lines": 1659,
+    "entrypoint_lines": 478,
+    "parts": [
+      "lib/screens/habitTracker/view/parts/habit_detail_screen_desktop_habit_detail.dart",
+      "lib/screens/habitTracker/view/parts/habit_detail_screen_desktop_panel.dart",
+      "lib/screens/habitTracker/view/parts/habit_detail_screen_desktop_plan_item.dart"
+    ],
+    "part_lines": [
+      453,
+      400,
+      341
+    ],
+    "sha256_original": "0b8293ed125f22598362f15316d785b6a8a41b1d821419da36f5f0f9ed41ffaf",
+    "sha256_lossless_chunks": "0b8293ed125f22598362f15316d785b6a8a41b1d821419da36f5f0f9ed41ffaf",
+    "retained_declarations": [
+      "HabitDetailScreen"
+    ],
+    "part_declarations": [
+      [
+        "_DesktopHabitDetail",
+        "_DesktopDetailHeader",
+        "_StatusBadge",
+        "_DesktopKpiGrid",
+        "_DesktopKpiCard"
+      ],
+      [
+        "_DesktopPanel",
+        "_DesktopTrend",
+        "_TodayActionPanel",
+        "_HabitConfigurationPanel",
+        "_InfoRow",
+        "_BehaviorPlanPanel"
+      ],
+      [
+        "_DesktopPlanItem",
+        "_HeroCard",
+        "_StatCard",
+        "_Section",
+        "_PlanRow",
+        "_Legend",
+        "_TrendPainter",
+        "_MonthStats"
+      ]
+    ]
+  },
+  {
+    "original_file": "lib/screens/invoices/view/InvoiceDataManagementScreen.dart",
+    "original_lines": 1241,
+    "entrypoint_lines": 31,
+    "parts": [
+      "lib/screens/invoices/view/parts/invoice_data_management_screen_state.dart",
+      "lib/screens/invoices/view/parts/invoice_data_management_screen_preferences_tab_state.dart",
+      "lib/screens/invoices/view/parts/invoice_data_management_screen_business_editor_screen_state.dart",
+      "lib/screens/invoices/view/parts/invoice_data_management_screen_asset_tile.dart"
+    ],
+    "part_lines": [
+      369,
+      202,
+      436,
+      220
+    ],
+    "sha256_original": "292c4978d4dff61d2b24121519dc7bc8d6bfb8dd8383825b2fbbbb5547bfee73",
+    "sha256_lossless_chunks": "292c4978d4dff61d2b24121519dc7bc8d6bfb8dd8383825b2fbbbb5547bfee73",
+    "retained_declarations": [
+      "InvoiceDataManagementScreen"
+    ],
+    "part_declarations": [
+      [
+        "_InvoiceDataManagementScreenState",
+        "_BusinessesTab",
+        "_CustomersTab",
+        "_CustomersTabState",
+        "_PreferencesTab"
+      ],
+      [
+        "_PreferencesTabState",
+        "_BusinessEditorScreen"
+      ],
+      [
+        "_BusinessEditorScreenState",
+        "_CustomerEditorScreen",
+        "_CustomerEditorScreenState",
+        "_BusinessAvatar"
+      ],
+      [
+        "_AssetTile",
+        "_FormSection",
+        "_EmptyView",
+        "_ErrorView"
+      ]
+    ]
+  },
+  {
+    "original_file": "lib/screens/habitTracker/view/habit_desktop_dashboard.dart",
+    "original_lines": 1228,
+    "entrypoint_lines": 37,
+    "parts": [
+      "lib/screens/habitTracker/view/parts/habit_desktop_dashboard_habit_desktop_section.dart",
+      "lib/screens/habitTracker/view/parts/habit_desktop_dashboard_habit_desktop_overview.dart",
+      "lib/screens/habitTracker/view/parts/habit_desktop_dashboard_desktop_habit_card.dart",
+      "lib/screens/habitTracker/view/parts/habit_desktop_dashboard_habit_sidebar_item.dart"
+    ],
+    "part_lines": [
+      337,
+      398,
+      401,
+      72
+    ],
+    "sha256_original": "9b4de8785e496ca89cc96590d3d6b527570c8b22d0db2caf9767421dc0ceadfc",
+    "sha256_lossless_chunks": "9b4de8785e496ca89cc96590d3d6b527570c8b22d0db2caf9767421dc0ceadfc",
+    "retained_declarations": [
+      "HabitDesktopDashboard"
+    ],
+    "part_declarations": [
+      [
+        "_HabitDesktopSection",
+        "_HabitDesktopDashboardState",
+        "_HabitModuleSidebar"
+      ],
+      [
+        "_HabitDesktopOverview",
+        "_DesktopSummary",
+        "_SummaryCard"
+      ],
+      [
+        "_DesktopHabitCard",
+        "_TinyMetric",
+        "_DesktopInfoBanner",
+        "_DesktopEmptyState",
+        "_SidebarLabel",
+        "_SidebarItem"
+      ],
+      [
+        "_HabitSidebarItem"
+      ]
+    ]
+  },
+  {
+    "original_file": "lib/screens/tutorials/tutorial_center_screen.dart",
+    "original_lines": 1024,
+    "entrypoint_lines": 23,
+    "parts": [
+      "lib/screens/tutorials/parts/tutorial_center_screen_state.dart",
+      "lib/screens/tutorials/parts/tutorial_center_screen_tutorial_desktop_detail.dart",
+      "lib/screens/tutorials/parts/tutorial_center_screen_tutorial_guide.dart"
+    ],
+    "part_lines": [
+      409,
+      322,
+      283
+    ],
+    "sha256_original": "2c50e6e71c3946ddce5d5adf94343808e56dc130f15eeda5f4fc119b0afe6143",
+    "sha256_lossless_chunks": "2c50e6e71c3946ddce5d5adf94343808e56dc130f15eeda5f4fc119b0afe6143",
+    "retained_declarations": [
+      "TutorialCenterScreen"
+    ],
+    "part_declarations": [
+      [
+        "_TutorialCenterScreenState",
+        "_TutorialDesktopSidebar",
+        "_TutorialSidebarItem"
+      ],
+      [
+        "_TutorialDesktopDetail",
+        "_TutorialDesktopStep",
+        "_TutorialEmptyState",
+        "_TutorialCard"
+      ],
+      [
+        "_TutorialGuide"
+      ]
+    ]
+  },
+  {
+    "original_file": "lib/screens/navigation/main_navigation_shell.dart",
+    "original_lines": 978,
+    "entrypoint_lines": 51,
+    "parts": [
+      "lib/screens/navigation/parts/main_navigation_shell_state.dart",
+      "lib/screens/navigation/parts/main_navigation_shell_desktop_sidebar.dart",
+      "lib/screens/navigation/parts/main_navigation_shell_app_navigation_rail.dart"
+    ],
+    "part_lines": [
+      320,
+      451,
+      169
+    ],
+    "sha256_original": "648f0bb4b5373aec299d2c41e659ac9a11893e4f5b8f4157375cdf496ebdacac",
+    "sha256_lossless_chunks": "648f0bb4b5373aec299d2c41e659ac9a11893e4f5b8f4157375cdf496ebdacac",
+    "retained_declarations": [
+      "MainNavigationShell"
+    ],
+    "part_declarations": [
+      [
+        "_MainNavigationShellState",
+        "_DesktopAdminShell"
+      ],
+      [
+        "_DesktopSidebar",
+        "_DesktopSidebarSectionLabel",
+        "_DesktopBrand",
+        "_DesktopNavItem",
+        "_DesktopTopBar"
+      ],
+      [
+        "_AppNavigationRail",
+        "_HiddenNavigationHomeActions",
+        "_NavigationItem"
+      ]
+    ]
+  },
+  {
+    "original_file": "lib/screens/habitTracker/view/HabitHistoryScreen.dart",
+    "original_lines": 932,
+    "entrypoint_lines": 30,
+    "parts": [
+      "lib/screens/habitTracker/view/parts/habit_history_screen_state.dart",
+      "lib/screens/habitTracker/view/parts/habit_history_screen_history_habit_row.dart",
+      "lib/screens/habitTracker/view/parts/habit_history_screen_collective_month_stats.dart"
+    ],
+    "part_lines": [
+      429,
+      380,
+      106
+    ],
+    "sha256_original": "2c08003f66333497a594fde7e3fa61a2eec80a8fea31d5ec6022469a3ee2baaf",
+    "sha256_lossless_chunks": "2c08003f66333497a594fde7e3fa61a2eec80a8fea31d5ec6022469a3ee2baaf",
+    "retained_declarations": [
+      "HabitHistoryScreen"
+    ],
+    "part_declarations": [
+      [
+        "_HabitHistoryScreenState",
+        "_HistoryCalendarPanel",
+        "_SelectedDayPanel"
+      ],
+      [
+        "_HistoryHabitRow",
+        "_StatusButton",
+        "_CollectiveDayCell",
+        "_RateBadge",
+        "_MonthStatChip",
+        "_CalendarLegend",
+        "_HistoryAction",
+        "_CollectiveDayStats"
+      ],
+      [
+        "_CollectiveMonthStats"
+      ]
+    ]
+  },
+  {
+    "original_file": "lib/screens/HomeScreen/widgets/dashboard_quick_actions.dart",
+    "original_lines": 898,
+    "entrypoint_lines": 402,
+    "parts": [
+      "lib/screens/HomeScreen/widgets/parts/dashboard_quick_actions_quick_selection_sheet.dart",
+      "lib/screens/HomeScreen/widgets/parts/dashboard_quick_actions_meter_selection_sheet.dart"
+    ],
+    "part_lines": [
+      353,
+      152
+    ],
+    "sha256_original": "3178125fcd42e3904900e09781b5de3d25b3fe0622cea7e9ae89f74c89d78a0b",
+    "sha256_lossless_chunks": "3178125fcd42e3904900e09781b5de3d25b3fe0622cea7e9ae89f74c89d78a0b",
+    "retained_declarations": [],
+    "part_declarations": [
+      [
+        "_QuickSelectionSheet",
+        "_QuickExpenseSheet",
+        "_QuickExpenseSheetState",
+        "_EmptyCategoryMessage"
+      ],
+      [
+        "_MeterSelectionSheet"
+      ]
+    ]
+  },
+  {
+    "original_file": "lib/screens/family_tree/view/family_tree_detail_screen.dart",
+    "original_lines": 853,
+    "entrypoint_lines": 29,
+    "parts": [
+      "lib/screens/family_tree/view/parts/family_tree_detail_screen_state.dart",
+      "lib/screens/family_tree/view/parts/family_tree_detail_screen_tree_tab.dart"
+    ],
+    "part_lines": [
+      522,
+      311
+    ],
+    "sha256_original": "fff73fba37d55afc82dd8e0bff9b12f12d319e44ccf472e69d9c844011c75fb9",
+    "sha256_lossless_chunks": "fff73fba37d55afc82dd8e0bff9b12f12d319e44ccf472e69d9c844011c75fb9",
+    "retained_declarations": [
+      "FamilyTreeDetailScreen"
+    ],
+    "part_declarations": [
+      [
+        "_FamilyTreeDetailScreenState"
+      ],
+      [
+        "_TreeTab",
+        "_PeopleTab",
+        "_MemoriesTab",
+        "_MemberAvatar",
+        "_InfoRow",
+        "_SectionTitle",
+        "_ModuleEmptyState"
+      ]
+    ]
+  },
+  {
+    "original_file": "lib/screens/HomeScreen/view/HomeScreen.dart",
+    "original_lines": 786,
+    "entrypoint_lines": 33,
+    "parts": [
+      "lib/screens/HomeScreen/view/parts/home_screen_home_page_state.dart",
+      "lib/screens/HomeScreen/view/parts/home_screen_desktop_dashboard_intro.dart"
+    ],
+    "part_lines": [
+      568,
+      194
+    ],
+    "sha256_original": "ca908e17badb36ff3c0742d936ed95c6b0e06559ad4a2a15a1eebe3f8e616624",
+    "sha256_lossless_chunks": "ca908e17badb36ff3c0742d936ed95c6b0e06559ad4a2a15a1eebe3f8e616624",
+    "retained_declarations": [
+      "HomePage"
+    ],
+    "part_declarations": [
+      [
+        "_HomePageState"
+      ],
+      [
+        "_DesktopDashboardIntro",
+        "_DesktopDashboardPanel",
+        "_SectionTitle",
+        "_DashboardLoading",
+        "_DashboardError"
+      ]
+    ]
+  },
+  {
+    "original_file": "lib/screens/HomeScreen/view/HomeScreenAlignment.dart",
+    "original_lines": 780,
+    "entrypoint_lines": 167,
+    "parts": [
+      "lib/screens/HomeScreen/view/parts/home_screen_alignment_style_selector.dart",
+      "lib/screens/HomeScreen/view/parts/home_screen_alignment_toggle_reorder_card.dart"
+    ],
+    "part_lines": [
+      431,
+      191
+    ],
+    "sha256_original": "83c6e65cdf842e88f784501ce4b385b9454bf82d6767548fc6bc3c213288fbce",
+    "sha256_lossless_chunks": "83c6e65cdf842e88f784501ce4b385b9454bf82d6767548fc6bc3c213288fbce",
+    "retained_declarations": [
+      "HomePageAlignment"
+    ],
+    "part_declarations": [
+      [
+        "_StyleSelector",
+        "_SummaryStyleSelector",
+        "_CreateStyleSelector",
+        "_ChoiceCard",
+        "_SettingsSwitchCard",
+        "_SummarySettingsList",
+        "_QuickActionSettingsList",
+        "_QuickAccessSettingsList"
+      ],
+      [
+        "_ToggleReorderCard",
+        "_SectionHeader",
+        "_QuickActionData"
+      ]
+    ]
+  },
+  {
+    "original_file": "lib/screens/scanner/view/scanner_gallery_screen.dart",
+    "original_lines": 766,
+    "entrypoint_lines": 43,
+    "parts": [
+      "lib/screens/scanner/view/parts/scanner_gallery_screen_state.dart",
+      "lib/screens/scanner/view/parts/scanner_gallery_screen_document_card.dart"
+    ],
+    "part_lines": [
+      522,
+      210
+    ],
+    "sha256_original": "619cf5f08bd5194d8f7e6c7f18b80694100901c7d7f80bb52d82ed7518268613",
+    "sha256_lossless_chunks": "619cf5f08bd5194d8f7e6c7f18b80694100901c7d7f80bb52d82ed7518268613",
+    "retained_declarations": [
+      "ScannerGalleryScreen"
+    ],
+    "part_declarations": [
+      [
+        "_ScannerGalleryScreenState"
+      ],
+      [
+        "_DocumentCard",
+        "_ScanThumbnail",
+        "_StatCard",
+        "_EmptyState"
+      ]
+    ]
+  },
+  {
+    "original_file": "lib/screens/Multimedia/MediaViewerScreen.dart",
+    "original_lines": 725,
+    "entrypoint_lines": 37,
+    "parts": [
+      "lib/screens/Multimedia/parts/media_viewer_screen_state.dart",
+      "lib/screens/Multimedia/parts/media_viewer_screen_info_row.dart"
+    ],
+    "part_lines": [
+      635,
+      62
+    ],
+    "sha256_original": "05c237c1b3b7e064a2718ccda3097078251e58d0c82b52a227f26175420a40f6",
+    "sha256_lossless_chunks": "05c237c1b3b7e064a2718ccda3097078251e58d0c82b52a227f26175420a40f6",
+    "retained_declarations": [
+      "MediaViewerScreen"
+    ],
+    "part_declarations": [
+      [
+        "_MediaViewerScreenState"
+      ],
+      [
+        "_InfoRow",
+        "_ErrorView"
+      ]
+    ]
+  },
+  {
+    "original_file": "lib/screens/habitTracker/view/HabitsScreen.dart",
+    "original_lines": 710,
+    "entrypoint_lines": 202,
+    "parts": [
+      "lib/screens/habitTracker/view/parts/habits_screen_dashboard_header.dart",
+      "lib/screens/habitTracker/view/parts/habits_screen_habit_form_state.dart"
+    ],
+    "part_lines": [
+      213,
+      304
+    ],
+    "sha256_original": "cdcdf999f03b7567de800042fdd65724573e361b97bda6e35379cf938b8d0a85",
+    "sha256_lossless_chunks": "cdcdf999f03b7567de800042fdd65724573e361b97bda6e35379cf938b8d0a85",
+    "retained_declarations": [
+      "HabitsScreen"
+    ],
+    "part_declarations": [
+      [
+        "_DashboardHeader",
+        "_MiniStat",
+        "_HabitCard",
+        "_HabitForm"
+      ],
+      [
+        "_HabitFormState",
+        "_InfoBanner",
+        "_EmptyState"
+      ]
+    ]
+  },
+  {
+    "original_file": "lib/screens/navigation/finance_screen.dart",
+    "original_lines": 662,
+    "entrypoint_lines": 186,
+    "parts": [
+      "lib/screens/navigation/parts/finance_screen_finance_overview_cards.dart",
+      "lib/screens/navigation/parts/finance_screen_loading_card.dart"
+    ],
+    "part_lines": [
+      445,
+      40
+    ],
+    "sha256_original": "949e4ee44fab789fca5a083e216dbe3db535d94684cbcefa0d91ae80506de493",
+    "sha256_lossless_chunks": "949e4ee44fab789fca5a083e216dbe3db535d94684cbcefa0d91ae80506de493",
+    "retained_declarations": [
+      "FinanceScreen"
+    ],
+    "part_declarations": [
+      [
+        "_FinanceOverviewCards",
+        "_ExpenseOverviewCard",
+        "_KhataOverviewCard",
+        "_FinanceMetric",
+        "_CurrentFinanceActivity",
+        "_ActivityRow",
+        "_ActivityItem"
+      ],
+      [
+        "_LoadingCard",
+        "_ErrorCard"
+      ]
+    ]
+  },
+  {
+    "original_file": "lib/screens/invoices/view/invoice_desktop_dashboard.dart",
+    "original_lines": 659,
+    "entrypoint_lines": 41,
+    "parts": [
+      "lib/screens/invoices/view/parts/invoice_desktop_dashboard_invoice_desktop_section.dart",
+      "lib/screens/invoices/view/parts/invoice_desktop_dashboard_sidebar_item.dart"
+    ],
+    "part_lines": [
+      458,
+      169
+    ],
+    "sha256_original": "996861af9214ef5e5b9b8d9d03380f1cab22c784e185dc6d5e009b7723afc70f",
+    "sha256_lossless_chunks": "996861af9214ef5e5b9b8d9d03380f1cab22c784e185dc6d5e009b7723afc70f",
+    "retained_declarations": [
+      "InvoiceDesktopDashboard"
+    ],
+    "part_declarations": [
+      [
+        "_InvoiceDesktopSection",
+        "_InvoiceDesktopDashboardState",
+        "_InvoiceModuleSidebar",
+        "_SidebarLabel"
+      ],
+      [
+        "_SidebarItem",
+        "_RecentInvoiceItem"
+      ]
+    ]
+  },
+  {
+    "original_file": "lib/screens/meter/meterreading/widgets/AddReadingWidget.dart",
+    "original_lines": 648,
+    "entrypoint_lines": 588,
+    "parts": [
+      "lib/screens/meter/meterreading/widgets/parts/add_reading_widget_state.dart"
+    ],
+    "part_lines": [
+      65
+    ],
+    "sha256_original": "a8cb484c07bcf0d307dbdeecc765b731602e35a722db46a79ddd953eaf9c9b2c",
+    "sha256_lossless_chunks": "a8cb484c07bcf0d307dbdeecc765b731602e35a722db46a79ddd953eaf9c9b2c",
+    "retained_declarations": [
+      "_ReadingFormSheet",
+      "_ReadingFormSheetState",
+      "_ReadingCalculation",
+      "_PreviewMetric",
+      "_InfoBanner",
+      "AddReadingWidget"
+    ],
+    "part_declarations": [
+      [
+        "_AddReadingWidgetState"
+      ]
+    ]
+  },
+  {
+    "original_file": "lib/screens/scanner/view/scanner_desktop_dashboard.dart",
+    "original_lines": 599,
+    "entrypoint_lines": 31,
+    "parts": [
+      "lib/screens/scanner/view/parts/scanner_desktop_dashboard_scanner_desktop_section.dart",
+      "lib/screens/scanner/view/parts/scanner_desktop_dashboard_sidebar_item.dart"
+    ],
+    "part_lines": [
+      425,
+      152
+    ],
+    "sha256_original": "6c48f4eef8925fa8a44c36acfea6e1c72261b6aed363bb1c3a6c2e2d75c82e2d",
+    "sha256_lossless_chunks": "6c48f4eef8925fa8a44c36acfea6e1c72261b6aed363bb1c3a6c2e2d75c82e2d",
+    "retained_declarations": [
+      "ScannerDesktopDashboard"
+    ],
+    "part_declarations": [
+      [
+        "_ScannerDesktopSection",
+        "_ScannerDesktopDashboardState",
+        "_ScannerModuleSidebar",
+        "_SidebarLabel"
+      ],
+      [
+        "_SidebarItem",
+        "_RecentDocumentItem"
+      ]
+    ]
+  },
+  {
+    "original_file": "lib/screens/quotation/services/quotation_service.dart",
+    "original_lines": 585,
+    "entrypoint_lines": 15,
+    "parts": [
+      "lib/screens/quotation/services/parts/quotation_service_quotation_import_result.dart",
+      "lib/screens/quotation/services/parts/quotation_service_quotation_service.dart"
+    ],
+    "part_lines": [
+      50,
+      529
+    ],
+    "sha256_original": "29d73580b11ca44eef24ebbd9b7a64452033349ad508c259085b3b5e76ddd676",
+    "sha256_lossless_chunks": "29d73580b11ca44eef24ebbd9b7a64452033349ad508c259085b3b5e76ddd676",
+    "retained_declarations": [
+      "QuotationSort"
+    ],
+    "part_declarations": [
+      [
+        "QuotationImportResult",
+        "QuotationLibraryStats",
+        "DuplicateQuotationException"
+      ],
+      [
+        "QuotationService"
+      ]
+    ]
+  },
+  {
+    "original_file": "lib/screens/family_tree/view/family_relationship_canvas.dart",
+    "original_lines": 554,
+    "entrypoint_lines": 37,
+    "parts": [
+      "lib/screens/family_tree/view/parts/family_relationship_canvas_state.dart",
+      "lib/screens/family_tree/view/parts/family_relationship_canvas_family_edges_painter.dart"
+    ],
+    "part_lines": [
+      448,
+      78
+    ],
+    "sha256_original": "f4e7accbd80a767e79e078692d43c703275aace3def872e80385870a38debcad",
+    "sha256_lossless_chunks": "f4e7accbd80a767e79e078692d43c703275aace3def872e80385870a38debcad",
+    "retained_declarations": [
+      "FamilyRelationshipCanvas"
+    ],
+    "part_declarations": [
+      [
+        "_FamilyRelationshipCanvasState",
+        "_FamilyNode",
+        "_RelationPort",
+        "_RelationColors",
+        "_RelationshipLegend",
+        "_LegendItem",
+        "_FamilyLayout"
+      ],
+      [
+        "_FamilyEdgesPainter"
+      ]
+    ]
+  },
+  {
+    "original_file": "lib/services/backupService.dart",
+    "original_lines": 800,
+    "entrypoint_lines": 40,
+    "parts": [
+      "lib/services/parts/backup_service_backup_save_result.dart",
+      "lib/services/parts/backup_service_backup_service.dart"
+    ],
+    "part_lines": [
+      72,
+      697
+    ],
+    "sha256_original": "8054d9f1b1d5d346f0668dc0b1d052777591cc8b24bcf232a6c427d3345f9188",
+    "sha256_lossless_chunks": "8054d9f1b1d5d346f0668dc0b1d052777591cc8b24bcf232a6c427d3345f9188",
+    "retained_declarations": [
+      "BackupSaveStatus",
+      "PortableBackupScope",
+      "PortableBackupScopeX"
+    ],
+    "part_declarations": [
+      [
+        "BackupSaveResult",
+        "PortableBackupPackage"
+      ],
+      [
+        "BackupService"
+      ]
+    ]
+  },
+  {
+    "original_file": "lib/services/device_sync/device_sync_service.dart",
+    "original_lines": 3358,
+    "entrypoint_lines": 25,
+    "parts": [
+      "lib/services/device_sync/parts/device_sync_service_sync_role.dart",
+      "lib/services/device_sync/parts/device_sync_service_device_sync_service.dart"
+    ],
+    "part_lines": [
+      111,
+      3231
+    ],
+    "sha256_original": "e23cb7ffbd1e15d751b437f0f11e803d19b5d5f4d4062f39e999cf017d3de1ec",
+    "sha256_lossless_chunks": "e23cb7ffbd1e15d751b437f0f11e803d19b5d5f4d4062f39e999cf017d3de1ec",
+    "retained_declarations": [],
+    "part_declarations": [
+      [
+        "SyncRole",
+        "LocalSyncBackup",
+        "SyncDevice",
+        "DeviceSyncState"
+      ],
+      [
+        "DeviceSyncService"
+      ]
+    ]
+  }
+]

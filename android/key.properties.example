@@ -1,0 +1,6 @@
+# EXAMPLE ONLY — copy to android/key.properties (ignored by Git).
+# Never commit actual passwords or your keystore.
+storePassword=REPLACE_WITH_PRIVATE_PASSWORD
+keyPassword=REPLACE_WITH_PRIVATE_PASSWORD
+keyAlias=REPLACE_WITH_YOUR_KEY_ALIAS
+storeFile=../app/dayark-keystore.jks

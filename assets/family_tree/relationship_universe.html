@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="color-scheme" content="dark">
+<title>DayArk · Life Constellation</title>
+<style>
+:root{color-scheme:dark;font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;--paper:#e9f5ff;--muted:#9bb1c7;--border:rgba(174,208,245,.14);--glass:rgba(11,24,43,.82);--mint:#72f6cf;--pink:#ff91b9;--violet:#a7a0ff;--gold:#ffc979}
+*{box-sizing:border-box}html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#071323;color:var(--paper);-webkit-user-select:none;user-select:none}
+body{background:radial-gradient(ellipse at 15% 15%,rgba(45,121,151,.22),transparent 47%),radial-gradient(ellipse at 80% 75%,rgba(90,57,143,.22),transparent 50%),#071323}
+#universe{position:absolute;inset:0;width:100%;height:100%;touch-action:none;cursor:grab}#universe.grabbing{cursor:grabbing}
+#top{position:absolute;top:0;left:0;right:0;padding:12px 15px;display:flex;align-items:flex-start;justify-content:space-between;gap:8px;pointer-events:none}
+#brand{pointer-events:auto;display:flex;align-items:center;gap:11px;min-width:0;padding:10px 13px;border:1px solid var(--border);border-radius:17px;background:var(--glass);backdrop-filter:blur(18px);box-shadow:0 10px 35px #010a1559}
+.emblem{width:33px;height:33px;border-radius:12px;background:radial-gradient(circle at 35% 30%,#80ffe3,#137b86 68%,#173f69);display:grid;place-items:center;box-shadow:0 0 18px #44dbcc66;font-size:18px}
+.eyebrow{font-size:9px;letter-spacing:2px;color:var(--mint);font-weight:800}#brand h1{font-size:14px;line-height:17px;margin:3px 0 1px;font-weight:750;white-space:nowrap}#summary{font-size:10px;color:var(--muted);white-space:nowrap}
+#actions{display:flex;align-items:center;gap:7px;flex-wrap:wrap;justify-content:flex-end;pointer-events:auto;max-width:66%}
+.chip,.circle,.mode,.search-box{background:var(--glass);border:1px solid var(--border);color:var(--paper);backdrop-filter:blur(18px);box-shadow:0 6px 25px #010a1555}
+.chip{border-radius:12px;padding:10px 12px;cursor:pointer;font-size:12px;font-weight:700;white-space:nowrap}.chip:hover,.circle:hover,.mode:hover{border-color:rgba(114,246,207,.6)}.chip.main{background:linear-gradient(130deg,#75f4d6,#4fbbce);color:#071828;border:0}
+#networkSwitch{padding:3px;border:1px solid var(--border);border-radius:14px;display:flex;gap:2px;background:var(--glass);backdrop-filter:blur(12px)}#switch{padding:3px;border:1px solid var(--border);border-radius:14px;display:flex;gap:2px;background:var(--glass);backdrop-filter:blur(12px)}.mode{padding:7px 10px;border-radius:10px;border:0;background:transparent;box-shadow:none;font-size:12px;font-weight:750;cursor:pointer}.mode[aria-pressed="true"]{background:#2b5263;color:#b6fff3}
+.search-box{height:36px;width:143px;border-radius:11px;display:flex;align-items:center;padding:0 9px;gap:6px}.search-box input{color:var(--paper);background:none;border:0;outline:0;font-size:12px;width:100%;min-width:0}.search-box input::placeholder{color:#93aac0}
+#results{position:absolute;right:15px;top:60px;width:min(285px,calc(100vw - 30px));max-height:min(50vh,340px);overflow:auto;background:#0c2037f2;border:1px solid var(--border);border-radius:15px;z-index:12;box-shadow:0 15px 42px #0009;padding:5px;pointer-events:auto}#results[hidden]{display:none}
+.result{display:block;width:100%;padding:12px;border:0;border-radius:9px;color:#eaf6ff;text-align:left;background:transparent;cursor:pointer}.result:hover{background:#25485b}.result small{display:block;color:var(--muted);margin-top:3px}
+#rails{position:absolute;right:14px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:8px;pointer-events:auto}.circle{width:39px;height:39px;display:grid;place-items:center;border-radius:13px;cursor:pointer;font-size:18px;font-weight:600}
+#hint{position:absolute;bottom:17px;left:17px;max-width:65%;padding:10px 12px;background:rgba(7,19,35,.65);border:1px solid var(--border);border-radius:12px;color:#a2bace;font-size:10px;pointer-events:none}
+#legend{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:6px;color:#d6eaff;font-size:10px}.dot{display:inline-block;width:7px;height:7px;margin-right:5px;border-radius:50%;vertical-align:middle}
+#details{position:absolute;bottom:20px;left:50%;transform:translateX(-50%);width:min(385px,calc(100vw - 32px));border:1px solid rgba(114,246,207,.24);background:rgba(9,25,44,.92);border-radius:18px;padding:14px 15px;box-shadow:0 15px 40px #0013;backdrop-filter:blur(22px);z-index:5}
+#details[hidden]{display:none}#person{display:flex;align-items:center;gap:11px;margin-bottom:12px}#avatar{width:43px;height:43px;flex:none;border-radius:50%;background:linear-gradient(140deg,#266d80,#302d6d);display:grid;place-items:center;font-weight:800;border:2px solid #77eedd;color:white;overflow:hidden}#avatar img{width:100%;height:100%;object-fit:cover}#names{min-width:0;flex:1}#personName{font-size:15px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}#personMeta{font-size:11px;color:#9ab0c8;margin-top:3px}#close{border:0;background:transparent;color:#b9cbdc;font-size:23px;cursor:pointer;align-self:flex-start}#personActions{display:flex;gap:8px}#personActions button{flex:1;min-width:0;padding:10px 8px;border-radius:10px;background:#26465b;border:1px solid #355971;color:#e7f6ff;font-size:12px;font-weight:700;cursor:pointer}#personActions button:first-child{background:#59ccbc;border-color:#59ccbc;color:#031c23}
+#status{position:absolute;top:83px;left:18px;font-size:11px;color:#8ba7c0;pointer-events:none}#loading{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);padding:14px 18px;border-radius:14px;background:#0b2038dd;border:1px solid var(--border);color:#c8e6ef;font-size:12px}#loading[hidden]{display:none}
+@media(max-width:620px){#top{padding:8px;display:block}#brand{display:none}#actions{max-width:100%;justify-content:flex-start;gap:5px;flex-wrap:wrap}#networkSwitch{flex-shrink:0}#actions .chip{padding:9px 10px;font-size:11px}.search-box{width:min(35vw,140px)}#hint{bottom:8px;left:8px;right:8px;max-width:none;text-align:center;font-size:9px;padding:7px}#details:not([hidden])~#hint{display:none}#details{bottom:9px}#rails{right:8px}#status{top:60px;left:10px}#legend{justify-content:center;gap:7px}}
+</style>
+</head>
+<body>
+<canvas id="universe" aria-label="Interactive spatial life connections graph"></canvas>
+<div id="top"><div id="brand"><div class="emblem">✦</div><div><div class="eyebrow">DAYARK / LIFE ARCHIVE</div><h1>Life constellation</h1><div id="summary">Explore your connections</div></div></div>
+<div id="actions"><div id="networkSwitch" role="group" aria-label="Connections"><button class="mode" id="familyView" aria-pressed="false">Family</button><button class="mode" id="lifeView" aria-pressed="true">Life</button></div><div id="switch" role="group" aria-label="View mode"><button class="mode" id="flat" aria-pressed="false">2D</button><button class="mode" id="space" aria-pressed="true">3D</button></div><label class="search-box" aria-label="Find a person">⌕ <input id="search" placeholder="Find a person" autocomplete="off" maxlength="90"></label><button class="chip" id="addEvent">+ Event</button><button class="chip main" id="addPerson">+ Person</button></div></div>
+<div id="results" hidden></div>
+<div id="rails"><button class="circle" id="zoomIn" aria-label="Zoom in" title="Zoom in">+</button><button class="circle" id="zoomOut" aria-label="Zoom out" title="Zoom out">−</button><button class="circle" id="fit" aria-label="Fit all" title="Fit all">⌗</button><button class="circle" id="labelsToggle" aria-label="Toggle labels" title="Toggle labels">Aa</button></div>
+<div id="status"></div><div id="loading">Loading life constellation…</div>
+<div id="details" hidden><div id="person"><div id="avatar"></div><div id="names"><div id="personName"></div><div id="personMeta"></div></div><button id="close" aria-label="Close person details">×</button></div><div id="personActions"><button id="viewDetails">View details</button><button id="addRelative">+ Connect</button></div></div>
+<div id="hint"><div id="legend"><span><i class="dot" style="background:#72f6cf"></i>Parent / child</span><span><i class="dot" style="background:#ff91b9"></i>Partners</span><span><i class="dot" style="background:#a7a0ff"></i>Siblings</span><span><i class="dot" style="background:#ffc979"></i>Guardian</span><span><i class="dot" style="background:#66b7ff"></i>Friends</span><span><i class="dot" style="background:#bb9eff"></i>Work</span><span><i class="dot" style="background:#ffd16d"></i>Events</span></div><span id="help">Drag to orbit · scroll or pinch to zoom · tap a sphere for details</span></div>
+<script>
+(() => {
+'use strict';
+const el = id => document.getElementById(id), cvs=el('universe'),ctx=cvs.getContext('2d',{alpha:true});
+const colors={event:'#ffd16d',friend:'#66b7ff',best_friend:'#66b7ff',childhood_friend:'#66b7ff',family_friend:'#66b7ff',colleague:'#bb9eff',manager:'#bb9eff',business_partner:'#bb9eff',mentor:'#bb9eff',classmate:'#9fc4ee',teacher:'#bb9eff',neighbor:'#9fc4ee',romantic_partner:'#ff91b9',former_partner:'#dc8fa3',custom:'#90b8d2',parent:'#72f6cf',spouse:'#ff91b9',partner:'#ff91b9',sibling:'#a7a0ff',guardian:'#ffc979',other:'#90b8d2'};
+const scene={members:[],events:[],familyEdges:[],lifeEdges:[],edges:[],view:'life',byId:new Map(),points:[],visible:[],mode:'3d',selection:null,hover:null,focus:null,rx:-.16,ry:-.33,zoom:1,panX:0,panY:0,center:{x:0,y:0,z:0},base:1,dist:900,labels:true,ready:false,dirty:true,t:0};
+let w=0,h=0,dpr=1,down=null,dragDistance=0,touches=new Map(),pinch=null,wasPinching=false,pictures=new Map(),lastDraw=0,frame=0;
+const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
+function emit(action,payload={}) {try{ const channel=window.DayArkBridge; if(channel&&typeof channel.postMessage==='function')channel.postMessage(JSON.stringify({action,...payload})); }catch(_){}}
+function cleanType(type){return colors[type]?type:'other';}
+function initials(name){return (name||'?').trim().split(/\s+/).slice(0,2).map(s=>s.charAt(0)).join('').toUpperCase();}
+function loadPictures(){pictures.clear();for(const m of scene.members){if(!m.photo)continue;const im=new Image();im.onload=()=>{scene.dirty=true;};im.src=m.photo;pictures.set(m.id,im);}}
+function layout(){
+ const people=scene.members, ids=people.map(m=>m.id),has=new Set(ids),leaders=new Map(ids.map(id=>[id,id]));
+ function root(x){let p=leaders.get(x);while(p!==leaders.get(p))p=leaders.get(p);while(x!==p){const n=leaders.get(x);leaders.set(x,p);x=n;}return p;}
+ function unite(a,b){const x=root(a),y=root(b);if(x!==y)leaders.set(y,x);}
+ for(const e of scene.edges){if((e.type==='spouse'||e.type==='partner')&&has.has(e.from)&&has.has(e.to))unite(e.from,e.to);}
+ const households=new Map();for(const m of people){let r=root(m.id);if(!households.has(r))households.set(r,[]);households.get(r).push(m);}
+ const family=[...households.entries()].map(([id,people])=>({id,people,generation:0,parents:new Set(),children:new Set(),order:0}));
+ const groupById=new Map(family.map(g=>[g.id,g]));
+ for(const e of scene.edges){if(e.type!=='parent'||!has.has(e.from)||!has.has(e.to))continue;
+  const a=root(e.from),b=root(e.to);if(a===b)continue;groupById.get(a).children.add(b);groupById.get(b).parents.add(a);}
+ const degree=new Map(family.map(g=>[g.id,g.parents.size]));const queue=family.filter(g=>!degree.get(g.id));
+ for(let i=0;i<queue.length;i++){const g=queue[i];for(const ch of g.children){const target=groupById.get(ch);target.generation=Math.max(target.generation,g.generation+1);degree.set(ch,degree.get(ch)-1);if(degree.get(ch)===0)queue.push(target);}}
+ // Cyclic/legacy data stays finite, rather than running forever.
+ const unvisited=family.filter(g=>degree.get(g.id)>0);for(const g of unvisited){g.generation=Math.max(g.generation,0);}
+ const generations=new Map();for(const g of family){if(!generations.has(g.generation))generations.set(g.generation,[]);generations.get(g.generation).push(g);}
+ const positions=[];
+ for(const [gen,groups] of [...generations.entries()].sort((a,b)=>a[0]-b[0])){
+  // Stable multi-pass barycentric ordering: relatives across a generation stay nearby.
+  for(let round=0;round<2;round++)groups.sort((a,b)=>{
+   const score=g=>{let values=[];for(const p of g.parents){const par=groupById.get(p);if(par&&Number.isFinite(par.order))values.push(par.order);}return values.length?values.reduce((x,y)=>x+y,0)/values.length:g.people[0].id/10;};
+   return score(a)-score(b)||a.people[0].id-b.people[0].id;});
+  const widths=groups.map(g=>Math.max(110,g.people.length*96+28));const total=widths.reduce((a,b)=>a+b,0)+Math.max(0,groups.length-1)*72;let cursor=-total/2;
+  groups.forEach((g,i)=>{const cx=cursor+widths[i]/2;g.order=cx;cursor+=widths[i]+72;
+    const siblings=g.people.slice().sort((a,b)=>a.id-b.id);
+    siblings.forEach((m,j)=>{
+      const pairX=(j-(siblings.length-1)/2)*96;
+      const depth=Math.sin(i*1.9+gen*1.47)*125+Math.cos(i*.7+gen*.6)*50;
+      positions.push({id:m.id,x:cx+pairX,y:gen*238,z:depth+(j-(siblings.length-1)/2)*10,member:m});
+    });
+  });
+ }
+ // In the Life view, people who have no genealogical links (friends,
+ // colleagues, etc.) orbit their social connections, not an arbitrary
+ // parent generation. People with genealogy keep their original positions.
+ if(scene.view==='life') {
+  const familyIds=new Set(scene.familyEdges.flatMap(e=>[e.from,e.to]));
+  const positioned=new Map(positions.map(p=>[p.id,p]));
+  const floating=positions.filter(p=>!familyIds.has(p.id));
+  for(const p of floating) {
+   const neighbors=scene.lifeEdges.filter(e=>e.from===p.id||e.to===p.id)
+    .map(e=>positioned.get(e.from===p.id?e.to:e.from)).filter(Boolean)
+    .sort((a,b)=>Number(familyIds.has(b.id))-Number(familyIds.has(a.id)));
+   if(!neighbors.length)continue;
+   const anchor=neighbors[0],angle=p.id*2.39996;
+   p.x=anchor.x+Math.cos(angle)*155;
+   p.y=anchor.y+Math.sin(angle)*115;
+   p.z=anchor.z+Math.cos(angle*1.7)*155;
+  }
+ }
+ // Event spheres orbit the people who attended; their presence never changes
+ // genealogy generation assignments, spouse groupings, or stored relationships.
+ if(scene.view==='life') {
+  const byPosition=new Map(positions.map(p=>[p.id,p]));
+  scene.events.forEach((event,i)=>{
+   const related=event.participants.map(id=>byPosition.get(id)).filter(Boolean);
+   const center=related.length?{
+    x:related.reduce((s,p)=>s+p.x,0)/related.length,
+    y:related.reduce((s,p)=>s+p.y,0)/related.length,
+    z:related.reduce((s,p)=>s+p.z,0)/related.length,
+   }:{x:Math.cos(i*2.4)*220,y:Math.sin(i*2.4)*210,z:0};
+   const angle=i*2.39996;
+   positions.push({id:event.id,x:center.x+Math.cos(angle)*135,
+    y:center.y+Math.sin(angle)*110,z:center.z+95+Math.sin(angle)*85,member:event});
+  });
+ }
+ const min={x:Infinity,y:Infinity,z:Infinity},max={x:-Infinity,y:-Infinity,z:-Infinity};
+ for(const p of positions)for(const c of ['x','y','z']){min[c]=Math.min(min[c],p[c]);max[c]=Math.max(max[c],p[c]);}
+ scene.center={x:(min.x+max.x)/2||0,y:(min.y+max.y)/2||0,z:(min.z+max.z)/2||0};
+ scene.points=positions;
+ const widthSpan=Math.max(220,max.x-min.x+165),heightSpan=Math.max(280,max.y-min.y+240);
+ scene.base=clamp(Math.min((w-75)/widthSpan,(h-165)/heightSpan),.13,1.3);
+ scene.dirty=true;
+}
+function resize(){const rect=cvs.getBoundingClientRect();w=Math.max(1,rect.width);h=Math.max(1,rect.height);dpr=Math.min(2,window.devicePixelRatio||1);cvs.width=Math.round(w*dpr);cvs.height=Math.round(h*dpr);ctx.setTransform(dpr,0,0,dpr,0,0);layout();}
+function projection(p){
+ let x=p.x-scene.center.x,y=p.y-scene.center.y,z=p.z-scene.center.z;
+ if(scene.mode==='2d'){z=0;}else{
+  const cosa=Math.cos(scene.ry),sina=Math.sin(scene.ry),cosb=Math.cos(scene.rx),sinb=Math.sin(scene.rx);
+  const X=x*cosa+z*sina,Z=z*cosa-x*sina;
+  const originalY=y;x=X;y=originalY*cosb-Z*sinb;z=originalY*sinb+Z*cosb;
+ }
+ const perspective=scene.mode==='3d'?clamp(scene.dist/(scene.dist+z),.52,1.66):1;
+ const scale=scene.base*scene.zoom*perspective;
+ return {x:w/2+scene.panX+x*scale,y:h/2+scene.panY+y*scale,z,r:clamp(26*scale,.5,49),scale};
+}
+function baseScene(){
+ ctx.clearRect(0,0,w,h);
+ ctx.save();ctx.globalAlpha=.3;ctx.strokeStyle='#42617e';ctx.lineWidth=.6;
+ const cell=60*clamp(scene.zoom,.65,1.6);const ox=((scene.panX%cell)+cell)%cell,oy=((scene.panY%cell)+cell)%cell;
+ for(let x=ox;x<w;x+=cell){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,h);ctx.stroke();}
+ for(let y=oy;y<h;y+=cell){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(w,y);ctx.stroke();}
+ ctx.restore();
+}
+function gradientColor(type){return colors[type]||colors.other;}
+function lines(pts){const map=new Map(pts.map(p=>[p.id,p]));const edges=scene.edges.slice().sort((a,b)=>{const A=(map.get(a.from)?.z||0)+(map.get(a.to)?.z||0),B=(map.get(b.from)?.z||0)+(map.get(b.to)?.z||0);return B-A;});
+ for(const e of edges){const a=map.get(e.from),b=map.get(e.to);if(!a||!b)continue;const color=gradientColor(e.type),active=e.from===scene.selection||e.to===scene.selection;
+  ctx.save();ctx.beginPath();ctx.moveTo(a.x,a.y);
+  let midX=(a.x+b.x)/2,midY=(a.y+b.y)/2;
+  if(scene.mode==='2d'&&e.type==='parent'){const corner=(b.y-a.y)*.55;ctx.bezierCurveTo(a.x,a.y+corner,b.x,b.y-corner,b.x,b.y);}else if(e.type==='spouse'||e.type==='partner'){ctx.lineTo(b.x,b.y);}else{const bend=scene.mode==='3d'?(e.type==='sibling'? -20:15):0;ctx.quadraticCurveTo(midX,midY+bend,b.x,b.y);}
+  const grad=ctx.createLinearGradient(a.x,a.y,b.x+.001,b.y+.001);grad.addColorStop(0,color+'bb');grad.addColorStop(.5,color);grad.addColorStop(1,color+'99');ctx.strokeStyle=grad;ctx.lineWidth=active?3.6:(e.type==='spouse'?2.5:1.5);ctx.globalAlpha=active?1:.62;
+  ctx.shadowColor=color;ctx.shadowBlur=active?15:5;
+  if(e.type==='sibling')ctx.setLineDash([5,7]);
+  else if(e.type==='guardian'||e.type==='event')ctx.setLineDash([2,7]);
+  else if(!['parent','spouse','partner','romantic_partner'].includes(e.type))ctx.setLineDash([5,6]);ctx.stroke();ctx.restore();
+  if(active){ctx.save();ctx.fillStyle=color;ctx.shadowBlur=13;ctx.shadowColor=color;ctx.beginPath();ctx.arc(midX,midY,3,0,Math.PI*2);ctx.fill();ctx.restore();}
+ }
+}
+function node(p){const selected=p.id===scene.selection||p.id===scene.focus,hovered=p.id===scene.hover,r=Math.max(4,p.r*(selected?1.13:1)),m=p.member,color=selected?'#93fbe7':m.kind==='event'?'#ffd16d':m.gender==='female'?'#bf91f1':m.gender==='male'?'#6cbeda':'#81dac9';
+ const x=p.x,y=p.y+(scene.mode==='3d'?Math.sin(scene.t*.0015+(m.kind==='event'?m.eventId*17:p.id))*2.2:0);
+ if(x+r<0||x-r>w||y+r<0||y-r>h)return;
+ ctx.save();ctx.shadowColor=selected?'#78ffe0':color;ctx.shadowBlur=selected?33:hovered?21:12;
+ const glow=ctx.createRadialGradient(x-r*.24,y-r*.31,r*.06,x,y,r*1.35);glow.addColorStop(0,'#f3ffff');glow.addColorStop(.13,color);glow.addColorStop(.55,selected?'#268f99':'#25527c');glow.addColorStop(1,'#0a1b32');ctx.fillStyle=glow;ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;
+ if(m.kind==='event'&&r>7){ctx.fillStyle='#fff1cf';ctx.font=`${Math.max(9,r*.85)}px system-ui`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('✦',x,y+1);}
+ const image=m.kind==='event'?null:pictures.get(p.id);if(image&&image.complete&&image.naturalWidth>0&&r>=11){ctx.save();ctx.beginPath();ctx.arc(x,y,r*.79,0,Math.PI*2);ctx.clip();ctx.globalAlpha=.90;const ratio=image.naturalWidth/image.naturalHeight;let dw=r*1.6,dh=r*1.6;if(ratio>1)dw*=ratio;else dh/=ratio;ctx.drawImage(image,x-dw/2,y-dh/2,dw,dh);ctx.restore();}
+ else if(r>12&&m.kind!=='event'){ctx.font=`${Math.max(9,Math.min(17,r*.57))}px system-ui,sans-serif`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillStyle='#e7ffff';ctx.fillText(initials(m.name),x,y+1);}
+ ctx.strokeStyle=selected?'#b7fff7':hovered?'#d3faff':'#89b5d7';ctx.lineWidth=selected?2.8:1.2;ctx.beginPath();ctx.arc(x,y,r+1,0,Math.PI*2);ctx.stroke();
+ if(scene.labels&&r>=6){const name=m.name||'Unnamed';const small=w<550;ctx.textAlign='center';ctx.textBaseline='middle';const size=clamp(10*scene.zoom,10,13);ctx.font=`${selected?'700':'600'} ${size}px system-ui,sans-serif`;
+  const shown=name.length>(small?17:27)?name.slice(0,small?16:26)+'…':name;
+  const tw=ctx.measureText(shown).width;const by=y+r+15;ctx.fillStyle=selected?'#163e53d9':'#0c2037d4';const bw=tw+15;
+  ctx.beginPath();if(ctx.roundRect)ctx.roundRect(x-bw/2,by-10,bw,20,7);else ctx.rect(x-bw/2,by-10,bw,20);ctx.fill();ctx.fillStyle=selected?'#b3ffec':'#e5f5ff';ctx.fillText(shown,x,by);}
+ ctx.restore();p.renderY=y;p.hitR=Math.max(r,17);
+}
+function draw(now){frame=requestAnimationFrame(draw);if(document.hidden)return;if(now-lastDraw<32&&!scene.dirty)return;lastDraw=now;scene.t=now;scene.dirty=false;
+ baseScene();const pts=scene.points.map(p=>({...projection(p),id:p.id,member:p.member}));scene.visible=pts;lines(pts);pts.sort((a,b)=>b.z-a.z).forEach(node);
+ if(!scene.points.length){ctx.fillStyle='#a4bacd';ctx.textAlign='center';ctx.font='13px system-ui,sans-serif';ctx.fillText('Add someone to begin your constellation',w/2,h/2);}
+}
+function pick(x,y){for(const p of [...scene.visible].sort((a,b)=>a.z-b.z)){const radius=p.hitR||Math.max(17,p.r);if(Math.hypot(p.x-x,(p.renderY||p.y)-y)<=radius+6)return p.id;}return null;}
+function show(id,center=false){const m=scene.byId.get(id);if(!m)return;scene.selection=id;scene.focus=id;scene.dirty=true;
+ el('details').hidden=false;el('personName').textContent=m.name||'Unnamed person';el('personMeta').textContent=m.kind==='event'?[m.occupation,'Life event'].filter(Boolean).join(' · ')
+  :[m.gender==='male'?'Male':m.gender==='female'?'Female':'Person',m.occupation].filter(Boolean).join(' · ');
+ el('viewDetails').textContent=m.kind==='event'?'View event':'View details';
+ el('addRelative').textContent=m.kind==='event'?'+ Album':scene.view==='family'?'+ Relative':'+ Connect';
+ const av=el('avatar');av.replaceChildren();if(m.photo){const im=document.createElement('img');im.src=m.photo;im.alt='';av.appendChild(im);}else av.textContent=initials(m.name);
+ if(center){const item=scene.points.find(p=>p.id===id);if(item){const q=projection(item);scene.panX+=w/2-q.x;scene.panY+=h/2-q.y;}}
+ if(m.kind!=='event')emit('focus',{id});}
+function updateMode(mode){scene.mode=mode==='2d'?'2d':'3d';scene.rx=scene.mode==='3d'?-.16:0;scene.ry=scene.mode==='3d'?-.33:0;
+ for(const mode of ['2d','3d'])el(mode==='2d'?'flat':'space').setAttribute('aria-pressed',String(scene.mode===mode));
+ el('help').textContent=scene.mode==='3d'?'Drag to orbit · scroll or pinch to zoom · tap a sphere for details':'Drag to move · scroll or pinch to zoom · tap a sphere for details';scene.dirty=true;}
+function setView(view){
+ scene.view=view==='family'?'family':'life';
+ el('familyView').setAttribute('aria-pressed',String(scene.view==='family'));
+ el('lifeView').setAttribute('aria-pressed',String(scene.view==='life'));
+ const valid=new Set(scene.members.map(m=>m.id));
+ scene.edges=scene.view==='family'?scene.familyEdges:[...scene.familyEdges,...scene.lifeEdges,
+  ...scene.events.flatMap(event=>event.participants.filter(id=>valid.has(id)).map(id=>({from:id,to:event.id,type:'event'})))];
+ scene.byId=new Map([...scene.members,...(scene.view==='life'?scene.events:[])].map(m=>[m.id,m]));
+ if(scene.selection!==null&&!scene.byId.has(scene.selection)){
+  scene.selection=null;el('details').hidden=true;
+ }
+ el('summary').textContent=`${scene.members.length} people · ${scene.events.length} events · ${scene.edges.length} connections`;
+ el('addRelative').textContent=scene.view==='family'?'+ Relative':'+ Connect';
+ layout();scene.dirty=true;
+}
+function setData(payload){
+ if(!payload||!Array.isArray(payload.members))return;
+ scene.members=payload.members.filter(m=>Number.isInteger(m.id)).map(m=>({...m,kind:'person'}));
+ const valid=new Set(scene.members.map(m=>m.id)),seen=new Set();
+ scene.familyEdges=(payload.relationships||[]).filter(e=>{
+  if(!valid.has(e.from)||!valid.has(e.to)||e.from===e.to)return false;
+  e.type=cleanType(e.type);const key=e.type==='parent'||e.type==='guardian'?`${e.type}:${e.from}:${e.to}`:`${e.type}:${Math.min(e.from,e.to)}:${Math.max(e.from,e.to)}`;
+  if(seen.has(key))return false;seen.add(key);return true;});
+ scene.lifeEdges=(payload.connections||[]).filter(e=>{
+  if(!valid.has(e.from)||!valid.has(e.to)||e.from===e.to)return false;
+  e.type=cleanType(e.type);const key=`${e.type}:${e.from}:${e.to}`;
+  if(seen.has(key))return false;seen.add(key);return true;});
+ scene.events=(payload.events||[]).filter(e=>Number.isInteger(e.id))
+  .map(e=>({id:'event:'+e.id,eventId:e.id,name:e.name||'Untitled event',
+   gender:'event',kind:'event',occupation:e.type||'Event',
+   participants:Array.isArray(e.participants)?e.participants.filter(id=>valid.has(id)):[]}));
+ loadPictures();setView(scene.view);el('loading').hidden=true;
+ if(scene.selection==null&&Number.isInteger(payload.focusedId)&&valid.has(payload.focusedId))scene.focus=payload.focusedId;
+ scene.ready=true;scene.dirty=true;
+}
+function search(){const text=el('search').value.trim().toLowerCase(),box=el('results');box.replaceChildren();if(!text){box.hidden=true;return;}
+ const found=[...scene.members,...(scene.view==='life'?scene.events:[])].filter(m=>(m.name||'').toLowerCase().includes(text)).slice(0,10);box.hidden=false;
+ if(!found.length){const v=document.createElement('div');v.className='result';v.textContent='No matching people or events';box.appendChild(v);}
+ for(const m of found){const btn=document.createElement('button');btn.className='result';btn.type='button';const name=document.createElement('span');name.textContent=m.name;const small=document.createElement('small');small.textContent=m.occupation||'Show in constellation';btn.append(name,small);btn.onclick=()=>{show(m.id,true);box.hidden=true;el('search').blur();};box.appendChild(btn);}
+}
+function reset(){scene.zoom=1;scene.panX=0;scene.panY=0;updateMode(scene.mode);scene.dirty=true;}
+function deltaZoom(factor){scene.zoom=clamp(scene.zoom*factor,.25,4.8);scene.dirty=true;}
+function pointerPos(e){const rect=cvs.getBoundingClientRect();return {x:e.clientX-rect.left,y:e.clientY-rect.top};}
+function pointerDown(e){if(e.button!==0&&e.button!==2)return;e.preventDefault();cvs.setPointerCapture(e.pointerId);const p=pointerPos(e);touches.set(e.pointerId,p);down={x:p.x,y:p.y,pointerId:e.pointerId,rx:scene.rx,ry:scene.ry,panX:scene.panX,panY:scene.panY,shift:e.shiftKey||e.button===2};dragDistance=0;cvs.classList.add('grabbing');if(touches.size===2){wasPinching=true;const arr=[...touches.values()];pinch={d:Math.hypot(arr[0].x-arr[1].x,arr[0].y-arr[1].y),z:scene.zoom,panX:scene.panX,panY:scene.panY,centerX:(arr[0].x+arr[1].x)/2,centerY:(arr[0].y+arr[1].y)/2};}}
+function pointerMove(e){const p=pointerPos(e);if(touches.has(e.pointerId)){touches.set(e.pointerId,p);if(touches.size>=2){const arr=[...touches.values()];if(pinch){const dist=Math.hypot(arr[0].x-arr[1].x,arr[0].y-arr[1].y);scene.zoom=clamp(pinch.z*(dist/Math.max(1,pinch.d)),.25,4.8);scene.panX=pinch.panX+((arr[0].x+arr[1].x)/2-pinch.centerX);scene.panY=pinch.panY+((arr[0].y+arr[1].y)/2-pinch.centerY);scene.dirty=true;}return;}
+ if(down&&down.pointerId===e.pointerId){const dx=p.x-down.x,dy=p.y-down.y;dragDistance=Math.max(dragDistance,Math.hypot(dx,dy));if(scene.mode==='3d'&&!down.shift){scene.ry=down.ry+dx*.006;scene.rx=clamp(down.rx+dy*.006,-1.34,1.34);}else{scene.panX=down.panX+dx;scene.panY=down.panY+dy;}scene.dirty=true;return;}}
+ const hit=pick(p.x,p.y);if(scene.hover!==hit){scene.hover=hit;scene.dirty=true;}cvs.style.cursor=hit?'pointer':'grab';}
+function pointerUp(e){const p=pointerPos(e);if(touches.has(e.pointerId))touches.delete(e.pointerId);if(touches.size<2)pinch=null;cvs.classList.remove('grabbing');if(down&&down.pointerId===e.pointerId){if(dragDistance<7&&!touches.size&&!wasPinching){const hit=pick(p.x,p.y);if(hit!==null)show(hit);else{el('details').hidden=true;scene.selection=null;scene.dirty=true;}}down=null;if(!touches.size)wasPinching=false;}}
+cvs.addEventListener('pointerdown',pointerDown);cvs.addEventListener('pointermove',pointerMove);cvs.addEventListener('pointerup',pointerUp);cvs.addEventListener('pointercancel',pointerUp);cvs.addEventListener('contextmenu',e=>e.preventDefault());
+cvs.addEventListener('wheel',e=>{e.preventDefault();deltaZoom(Math.exp(-e.deltaY*.0011));},{passive:false});
+el('familyView').onclick=()=>setView('family');el('lifeView').onclick=()=>setView('life');el('addEvent').onclick=()=>emit('addEvent');
+el('flat').onclick=()=>updateMode('2d');el('space').onclick=()=>updateMode('3d');el('fit').onclick=reset;el('zoomIn').onclick=()=>deltaZoom(1.2);el('zoomOut').onclick=()=>deltaZoom(1/1.2);el('labelsToggle').onclick=()=>{scene.labels=!scene.labels;scene.dirty=true;};el('addPerson').onclick=()=>emit('addPerson');el('search').addEventListener('input',search);
+el('close').onclick=()=>{el('details').hidden=true;scene.selection=null;scene.dirty=true;};el('viewDetails').onclick=()=>{if(scene.selection!==null){const selected=scene.byId.get(scene.selection);
+ if(selected&&selected.kind==='event')emit('eventDetails',{id:selected.eventId});else emit('details',{id:scene.selection});}};el('addRelative').onclick=()=>{if(scene.selection!==null){const selected=scene.byId.get(scene.selection);
+ if(selected&&selected.kind==='event')emit('albumForEvent',{id:selected.eventId});
+ else if(scene.view==='life')emit('connect',{id:scene.selection});
+ else emit('addRelative',{id:scene.selection,role:'child'});}};
+// Hand Flutter a lightweight, local snapshot before it temporarily hides the
+// native WebView for a platform modal. No graph data leaves the device.
+function captureForSheet(){
+ try{
+  const shot=document.createElement('canvas');
+  const ratio=Math.min(1,1200/Math.max(cvs.width,cvs.height));
+  shot.width=Math.max(1,Math.round(cvs.width*ratio));
+  shot.height=Math.max(1,Math.round(cvs.height*ratio));
+  const paint=shot.getContext('2d',{alpha:false});
+  paint.fillStyle='#071323';paint.fillRect(0,0,shot.width,shot.height);
+  paint.drawImage(cvs,0,0,shot.width,shot.height);
+  emit('sheetPreview',{image:shot.toDataURL('image/jpeg',.75),view:{
+   mode:scene.mode,rx:scene.rx,ry:scene.ry,zoom:scene.zoom,
+   panX:scene.panX,panY:scene.panY,labels:scene.labels,selection:scene.selection,view:scene.view
+  }});
+ }catch(_){emit('sheetPreview',{view:{
+   mode:scene.mode,rx:scene.rx,ry:scene.ry,zoom:scene.zoom,
+   panX:scene.panX,panY:scene.panY,labels:scene.labels,selection:scene.selection,view:scene.view
+  }});}
+}
+function restoreState(state){
+ if(!state)return;
+ setView(state.view);
+ updateMode(state.mode);
+ for(const key of ['rx','ry','panX','panY'])if(Number.isFinite(state[key]))scene[key]=state[key];
+ if(Number.isFinite(state.zoom))scene.zoom=clamp(state.zoom,.25,4.8);
+ if(typeof state.labels==='boolean')scene.labels=state.labels;
+ if((Number.isInteger(state.selection)||typeof state.selection==='string')&&scene.byId.has(state.selection))show(state.selection);
+ scene.dirty=true;
+}
+window.DayArkGraph={setData,setView,focus(id){if(scene.byId.has(id)){show(id,true);}},setMode:updateMode,fit:reset,captureForSheet,restoreState};
+window.addEventListener('resize',resize);resize();frame=requestAnimationFrame(draw);emit('ready');
+// Standalone local browser preview: no demo data is loaded in production.
+if(new URLSearchParams(location.search).has('demo')){
+ const demo=[['You', 'male'],['Partner','female'],['Father','male'],['Mother','female'],['Brother','male'],['Sister','female'],['Grandmother','female'],['Grandfather','male'],['Child','female'],['Brother’s partner','female']].map(([name,gender],i)=>({id:i+1,name,gender}));
+ setData({members:demo,events:[{id:1,name:'Graduation party',type:'graduation',participants:[1,2,5]},{id:2,name:'Childhood reunion',type:'celebration',participants:[1,6]}],connections:[{from:1,to:5,type:'best_friend'},{from:1,to:6,type:'classmate'}],relationships:[{from:1,to:2,type:'spouse'},{from:3,to:4,type:'spouse'},{from:7,to:8,type:'spouse'},{from:3,to:1,type:'parent'},{from:4,to:1,type:'parent'},{from:3,to:5,type:'parent'},{from:4,to:5,type:'parent'},{from:3,to:6,type:'parent'},{from:4,to:6,type:'parent'},{from:1,to:5,type:'sibling'},{from:1,to:6,type:'sibling'},{from:7,to:3,type:'parent'},{from:8,to:3,type:'parent'},{from:1,to:9,type:'parent'},{from:2,to:9,type:'parent'},{from:5,to:10,type:'spouse'}],focusedId:1});}
+})();
+</script>
+</body>
+</html>

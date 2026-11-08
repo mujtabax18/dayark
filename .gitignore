@@ -1,0 +1,91 @@
+# DayArk / Flutter — keep application source, never generated output or local secrets.
+
+# Editors / operating systems
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+*.iml
+*.ipr
+*.iws
+.idea/
+.vscode/
+*.log
+*.tmp
+.history/
+
+# Dart and Flutter caches / generated artifacts
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+.packages
+.fvm/
+**/build/
+**/ephemeral/
+**/.gradle/
+**/.kotlin/
+**/.cxx/
+**/captures/
+**/doc/api/
+**/ios/Flutter/.last_build_id
+**/flutter/generated_plugin_registrant.*
+**/flutter/generated_plugins.cmake
+**/GeneratedPluginRegistrant.java
+**/GeneratedPluginRegistrant.h
+**/GeneratedPluginRegistrant.m
+**/GeneratedPluginRegistrant.swift
+**/Generated.xcconfig
+**/flutter_export_environment.sh
+
+# Android/iOS provisioning, machine-local configuration and signing keys
+**/local.properties
+**/key.properties
+**/*.jks
+**/*.keystore
+**/*.p8
+**/*.p12
+**/*.pfx
+**/*.mobileprovision
+**/*.provisionprofile
+**/google-services.json
+**/GoogleService-Info.plist
+keys/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+
+# Generated app bundles, installers, and archives
+/dist/
+/out/
+/releases/
+*.AppImage
+*.AppImage.zsync
+*.apk
+*.aab
+*.msix
+*.msi
+*.exe
+*.dmg
+*.ipa
+app.*.symbols
+app.*.map.json
+
+# Keep Flutter resolution metadata/source manifests and templates:
+# pubspec.lock, .fvmrc, android/key.properties.example, gradle wrapper.
+
+# Python helper caches
+**/__pycache__/
+*.pyc
+*.pyo
+
+# Release archives written outside the dist folder (also ignore them)
+*.zip
+*.tar.gz
+*.7z

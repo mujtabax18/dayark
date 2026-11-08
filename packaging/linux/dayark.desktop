@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=DayArk
+Comment=Plan it. Record it. Remember it. Keep it yours.
+Exec=AppRun
+Icon=dayark
+Terminal=false
+Categories=Office;Utility;
