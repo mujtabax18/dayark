@@ -40,13 +40,47 @@ def ask_yes_no(question: str, default: bool = False) -> bool:
 
 
 def run(*args: str, cwd: Path = ROOT, capture: bool = False) -> str:
-    print("+", " ".join(str(a) for a in args), flush=True)
-    result = subprocess.run([str(a) for a in args], cwd=cwd, text=True,
-                            stdout=subprocess.PIPE if capture else None,
-                            stderr=subprocess.PIPE if capture else None)
+    # DAYARK_WINDOWS_BATCH_LAUNCH_V2
+    if not args:
+        raise ValueError("run() requires an executable")
+    command = [str(arg) for arg in args]
+    original = command[0]
+    executable = shutil.which(original)
+    if not executable and Path(original).is_file():
+        executable = original
+    if not executable:
+        raise RuntimeError(
+            f"Cannot find {original!r} on PATH. On Windows run 'where.exe flutter' "
+            "and 'py -3 -c \"import shutil; print(shutil.which(\"flutter\"))\"'."
+        )
+    command[0] = str(executable)
+
+    # .bat/.cmd launch via cmd.exe on Windows; normal executables run directly.
+    # Only the commands defined in this release tool are used here.
+    is_batch = (platform.system() == "Windows" and
+                Path(executable).suffix.lower() in (".bat", ".cmd"))
+    invocation = subprocess.list2cmdline(command) if is_batch else command
+    print("+", " ".join(str(arg) for arg in args), flush=True)
+    if is_batch:
+        print("  Windows batch launcher:", executable, flush=True)
+
+    try:
+        result = subprocess.run(
+            invocation, cwd=cwd, text=True, shell=is_batch,
+            stdout=subprocess.PIPE if capture else None,
+            stderr=subprocess.PIPE if capture else None,
+        )
+    except OSError as exc:
+        raise RuntimeError(
+            f"Unable to launch {original!r} (resolved to {executable!r}): "
+            f"{exc}. Check PATH and the Windows command processor."
+        ) from exc
+
     if result.returncode:
         detail = (result.stderr or result.stdout or "").strip()
-        raise RuntimeError(f"Command failed ({result.returncode}): {args[0]} {detail[:500]}")
+        raise RuntimeError(
+            f"Command failed ({result.returncode}): {original} {detail[:500]}"
+        )
     return (result.stdout or "").strip()
 
 
