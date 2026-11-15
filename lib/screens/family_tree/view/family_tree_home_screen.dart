@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter/material.dart';
 
 import 'life_archive_media.dart';
 
 import '../../../core/design/app_tokens.dart';
+import '../../../services/sync_content_signal.dart';
 import '../../../core/widgets/common/app_surface.dart';
 import '../models/family_tree_models.dart';
 import '../services/family_tree_repository.dart';
@@ -22,6 +24,7 @@ class FamilyTreeHomeScreen extends StatefulWidget {
 class _FamilyTreeHomeScreenState extends State<FamilyTreeHomeScreen> {
   final FamilyTreeRepository _repository = FamilyTreeRepository();
   final LifeArchiveRepository _lifeRepository = LifeArchiveRepository();
+  Timer? _remoteRefreshTimer;
   bool _loading = true;
   List<FamilyTree> _trees = const [];
   Map<int, _FamilyPreview> _previews = const {};
@@ -32,11 +35,26 @@ class _FamilyTreeHomeScreenState extends State<FamilyTreeHomeScreen> {
   @override
   void initState() {
     super.initState();
+    SyncContentSignal.revision.addListener(_scheduleRemoteRefresh);
     _load();
+  }
+
+  void _scheduleRemoteRefresh() {
+    _remoteRefreshTimer?.cancel();
+    _remoteRefreshTimer = Timer(const Duration(milliseconds: 350), () {
+      if (!mounted) return;
+      if (_loading) {
+        _scheduleRemoteRefresh();
+      } else {
+        _load();
+      }
+    });
   }
 
   @override
   void dispose() {
+    SyncContentSignal.revision.removeListener(_scheduleRemoteRefresh);
+    _remoteRefreshTimer?.cancel();
     _archiveSearchController.dispose();
     super.dispose();
   }

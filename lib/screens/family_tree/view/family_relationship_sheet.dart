@@ -84,12 +84,6 @@ class _FamilyRelationshipSheetState extends State<FamilyRelationshipSheet> {
 
     bool shareChildrenWithSpouses = true;
     bool shareParentsWithSiblings = true;
-    final parentIds = _relationships
-        .where((relationship) => relationship.type == 'parent' &&
-            relationship.toMemberId == widget.member.id)
-        .map((relationship) => relationship.fromMemberId)
-        .toSet();
-    final parents = widget.members.where((member) => parentIds.contains(member.id)).toList();
     String role = 'parent_of';
     int targetId = available.first.id;
     final result = await showDialog<bool>(
@@ -126,13 +120,11 @@ class _FamilyRelationshipSheetState extends State<FamilyRelationshipSheet> {
                       .toList(),
                   onChanged: (value) => setDialogState(() => targetId = value ?? available.first.id),
                 ),
-                if (role == 'sibling' && parents.isNotEmpty)
+                if (role == 'sibling')
                   SwitchListTile.adaptive(
                     contentPadding: EdgeInsets.zero,
-                    title: const Text('Use the same parents'),
-                    subtitle: Text('On by default. The new sibling will also be linked to '
-                        '${parents.map((parent) => parent.fullName).join(' and ')}. '
-                        'No parent or person is duplicated.'),
+                    title: const Text('Link to all siblings and share parents'),
+                    subtitle: const Text('Connect to the existing sibling group and reuse known parents. Turn off for a single half- or step-sibling link.'),
                     value: shareParentsWithSiblings,
                     onChanged: (value) =>
                         setDialogState(() => shareParentsWithSiblings = value),

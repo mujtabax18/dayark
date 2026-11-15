@@ -465,11 +465,17 @@ class FamilyTreeRepository {
     final childrenByParent = <int, Set<int>>{};
     final parentsByChild = <int, Set<int>>{};
     final spouses = <int, Set<int>>{};
+    final siblings = <int, Set<int>>{};
     for (final record in existing) {
       final a = record['from_member_id'] as int;
       final b = record['to_member_id'] as int;
       final relationship = record['relationship_type'] as String;
       keys.add('$relationship:$a:$b');
+      if (relationship == 'sibling') {
+        siblings.putIfAbsent(a, () => <int>{}).add(b);
+        siblings.putIfAbsent(b, () => <int>{}).add(a);
+        keys.add('sibling:${a < b ? a : b}:${a < b ? b : a}');
+      }
       if (relationship == 'parent') {
         childrenByParent.putIfAbsent(a, () => <int>{}).add(b);
         parentsByChild.putIfAbsent(b, () => <int>{}).add(a);
@@ -518,7 +524,44 @@ class FamilyTreeRepository {
       }
     }
 
-    await writeLink(from, to, type);
+    if (type == 'sibling') {
+      if (hasPath(from, to) || hasPath(to, from)) {
+        throw StateError('An ancestor or descendant cannot be added as a sibling.');
+      }
+      // The default groups existing explicit siblings and people with an
+      // identical recorded parent set. Do not infer siblings through spouses.
+      // Turning off parent sharing retains the explicit-only relationship for
+      // half/step-family cases where the full group must not be merged.
+      if (shareParentsWithSiblings) {
+        final group = <int>{};
+        final pending = <int>[from, to];
+        while (pending.isNotEmpty) {
+          final current = pending.removeLast();
+          if (!group.add(current)) continue;
+          pending.addAll(siblings[current] ?? const <int>{});
+          final parents = parentsByChild[current];
+          if (parents != null && parents.isNotEmpty) {
+            for (final entry in parentsByChild.entries) {
+              if (entry.value.length == parents.length &&
+                  entry.value.containsAll(parents)) pending.add(entry.key);
+            }
+          }
+        }
+        final ids = group.toList()..sort();
+        for (var i = 0; i < ids.length; i++) {
+          for (var j = i + 1; j < ids.length; j++) {
+            if (hasPath(ids[i], ids[j]) || hasPath(ids[j], ids[i])) {
+              throw StateError('Review existing sibling and parent links before merging these siblings.');
+            }
+            await writeLink(ids[i], ids[j], 'sibling');
+          }
+        }
+      } else {
+        await writeLink(from, to, type);
+      }
+    } else {
+      await writeLink(from, to, type);
+    }
     if (type == 'sibling' && shareParentsWithSiblings) {
       // Reuse the existing parent IDs of the person whose node was selected.
       // Never create or clone a parent/member. The graph can have one child

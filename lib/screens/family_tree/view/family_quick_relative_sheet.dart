@@ -66,15 +66,6 @@ class _FamilyQuickRelativeSheetState extends State<FamilyQuickRelativeSheet> {
     }
   }
 
-  List<FamilyMember> get _selectedPersonsParents {
-    final parentIds = widget.relationships
-        .where((relationship) => relationship.type == 'parent' &&
-            relationship.toMemberId == widget.anchor.id)
-        .map((relationship) => relationship.fromMemberId)
-        .toSet();
-    return widget.members.where((person) => parentIds.contains(person.id)).toList();
-  }
-
   int get _sharedChildCount {
     if (!_shareChildrenWithSpouses || _role != 'spouse') return 0;
     final parentIds = <int>{widget.anchor.id};
@@ -246,17 +237,15 @@ class _FamilyQuickRelativeSheetState extends State<FamilyQuickRelativeSheet> {
                   Text('Only a name is required. Add dates, contact details and stories later.',
                     style: theme.textTheme.bodySmall),
                 ],
-                if (_role == 'sibling' && _selectedPersonsParents.isNotEmpty) ...[
+                if (_role == 'sibling') ...[
                   const SizedBox(height: AppSpacing.md),
                   SwitchListTile.adaptive(
                     contentPadding: EdgeInsets.zero,
                     value: _shareParentsWithSiblings,
                     onChanged: _saving ? null : (value) =>
                         setState(() => _shareParentsWithSiblings = value),
-                    title: const Text('Use the same parents'),
-                    subtitle: Text('On by default. Link this sibling to '
-                        '${_selectedPersonsParents.map((person) => person.fullName).join(' and ')}. '
-                        'The existing parents will be reused, not duplicated.'),
+                    title: const Text('Link to all siblings and share parents'),
+                    subtitle: const Text('Connect to the existing sibling group and reuse known parents. Turn off for a single half- or step-sibling link.'),
                   ),
                 ],
                 if (_role == 'child' || _role == 'parent' || _role == 'spouse') ...[

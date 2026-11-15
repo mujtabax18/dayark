@@ -1275,8 +1275,230 @@ class DeviceSyncService extends StateNotifier<DeviceSyncState>
     }
   }
 
+  // Files are fetched independently of the durable SQL journal, so even an
+  // already-acknowledged record from an older build can recover its image.
+  // Only these app-managed file columns are eligible; never serve a supplied
+  // filesystem path or arbitrary local file over the network.
+  static const _syncMediaColumns = <String, List<String>>{
+    'family_trees': ['cover_image_path'],
+    'family_members': ['profile_image_path'],
+    'family_memories': ['media_path'],
+    'family_member_photos': ['image_path'],
+    'family_memory_photos': ['image_path'],
+    'media_files': ['file_path', 'original_path', 'edited_path'],
+    'media_edit_history': ['source_path', 'output_path'],
+    'scans': ['original_path', 'edited_path'],
+    'scan_edit_history': ['source_path', 'output_path'],
+  };
+  static const _maxSyncMediaBytes = 256 * 1024 * 1024;
+  static const _mediaTimeout = Duration(minutes: 2);
+  final _mediaRetryAfter = <String, DateTime>{};
+
+  // Accept Windows and Unix paths. Portable bootstrap prefixes filenames with
+  // an asset index and appends a 12-digit hash; ignore that wrapper only.
+  static String _mediaName(String path) {
+    var name = p.posix.basename(path.replaceAll('\\', '/'));
+    final wrapped = RegExp(r'^\d{6}_(.+)-[0-9a-f]{12}(\.[^.]+)?$');
+    for (var i = 0; i < 8; i++) {
+      final match = wrapped.firstMatch(name);
+      if (match == null) break;
+      name = '${match.group(1)}${match.group(2) ?? ''}';
+    }
+    return name.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
+  }
+
+  Future<File?> _ownedMediaFile(String table, String? path) async {
+    if (path == null || path.isEmpty || !p.isAbsolute(path)) return null;
+    try {
+      final docs = await getApplicationDocumentsDirectory();
+      final category = table.startsWith('family_') ? 'family_trees'
+          : table.startsWith('scan') ? 'HomeHelperScans' : 'HomeHelperMedia';
+      final file = File(path);
+      if (!await file.exists()) return null;
+      final resolved = await file.resolveSymbolicLinks();
+      final root = await docs.resolveSymbolicLinks();
+      final allowed = [category, 'HomeHelperRestored', 'DayArkSyncedMedia'];
+      if (!allowed.any((folder) => p.isWithin(p.join(root, folder), resolved))) {
+        return null;
+      }
+      return File(resolved);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _serveSyncMedia(HttpRequest req) async {
+    final body = jsonDecode(await utf8.decoder.bind(req).join());
+    if (body is! Map) return _json(req.response, 400, {'error': 'Invalid request'});
+    final peerId = body['deviceId']?.toString() ?? '';
+    final token = body['token']?.toString() ?? '';
+    final db = await _db;
+    final peers = await db.query('sync_devices', where: 'device_id=? AND revoked=0', whereArgs: [peerId], limit: 1);
+    if (peers.isEmpty || token.isEmpty ||
+        (token != peers.first['token'] && token != peers.first['previous_token'])) {
+      return _json(req.response, 403, {'error': 'Device not authorized'});
+    }
+    if (state.role == SyncRole.primary && await _peerNeedsBootstrap(db, peerId)) {
+      return _json(req.response, 409, {'error': 'Snapshot required'});
+    }
+    final table = body['table']?.toString() ?? '';
+    final column = body['column']?.toString() ?? '';
+    final entity = body['entity']?.toString() ?? '';
+    final name = body['name']?.toString() ?? '';
+    if (!(_syncMediaColumns[table]?.contains(column) ?? false) || entity.isEmpty || name.isEmpty) {
+      return _json(req.response, 400, {'error': 'Invalid media reference'});
+    }
+    final rows = await db.rawQuery(
+      'SELECT t."$column" AS media_path FROM "$table" t '
+      'JOIN sync_row_identity i ON i.table_name=? AND i.local_row_id=CAST(t.id AS TEXT) '
+      'WHERE i.entity_id=? LIMIT 1', [table, entity]);
+    final path = rows.isEmpty ? null : rows.first['media_path']?.toString();
+    final file = path != null && _mediaName(path) == name ? await _ownedMediaFile(table, path) : null;
+    if (file == null) return _json(req.response, 404, {'error': 'Media not available'});
+    final length = await file.length();
+    if (length == 0 || length > _maxSyncMediaBytes) {
+      return _json(req.response, 413, {'error': 'Media exceeds transfer limit or is empty'});
+    }
+    final digest = await sha256.bind(file.openRead()).first;
+    req.response.headers.contentType = ContentType.binary;
+    req.response.headers.set('x-dayark-media-sha256', digest.toString());
+    req.response.contentLength = length;
+    await req.response.addStream(file.openRead()).timeout(_mediaTimeout);
+    await req.response.close();
+  }
+
+  Future<File> _syncMediaTarget(String table, String column, String entity, String name) async {
+    final safeName = name.isEmpty || name == '.' || name == '..' ? 'attachment' : name;
+    final key = sha256.convert(utf8.encode('$table|$entity|$column|$name')).toString();
+    final docs = await getApplicationDocumentsDirectory();
+    return File(p.join(docs.path, 'DayArkSyncedMedia', key, safeName));
+  }
+
+  Future<bool> _pullOneMedia(Map<String, Object?> peer, String table,
+      String column, String entity, String rowId, String oldPath) async {
+    final name = _mediaName(oldPath);
+    if (name.isEmpty || name == '.' || name == '..') return false;
+    final target = await _syncMediaTarget(table, column, entity, name);
+    final temp = File('${target.path}.part');
+    final client = LocalSyncTls.pinnedClient(peer['tls_fingerprint']?.toString(),
+        timeout: const Duration(seconds: 4));
+    try {
+      final request = await client.postUrl(LocalSyncTls.endpoint(
+          peer['host'].toString(), (peer['port'] as num).toInt(), '/sync-media')).timeout(_networkTimeout);
+      request.headers.contentType = ContentType.json;
+      request.write(jsonEncode({'deviceId': state.deviceId, 'token': peer['token'],
+        'table': table, 'column': column, 'entity': entity, 'name': name}));
+      final response = await request.close().timeout(_mediaTimeout);
+      if (response.statusCode != 200 || response.contentLength <= 0 ||
+          response.contentLength > _maxSyncMediaBytes) return false;
+      final expected = response.headers.value('x-dayark-media-sha256') ?? '';
+      if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(expected)) return false;
+      await target.parent.create(recursive: true);
+      final sink = temp.openWrite();
+      var received = 0;
+      try {
+        await for (final chunk in response.timeout(_mediaTimeout)) {
+          received += chunk.length;
+          if (received > response.contentLength) throw const FormatException('Invalid media length');
+          sink.add(chunk);
+          await sink.flush();
+        }
+      } finally {
+        await sink.close();
+      }
+      if (received != response.contentLength ||
+          (await sha256.bind(temp.openRead()).first).toString() != expected) {
+        throw const FormatException('Media integrity check failed');
+      }
+      if (_logoutInProgress || state.role == SyncRole.standalone) return false;
+      final db = await _db;
+      // Compare-and-swap the old path; a concurrent edit/delete must win.
+      // Suppress journaling of the device-specific path, but retain the original
+      // logical operation and its entity identity for forwarding to other peers.
+      return await db.transaction((txn) async {
+        final rows = await txn.query(table, columns: [column], where: 'id=?', whereArgs: [rowId], limit: 1);
+        if (rows.isEmpty || rows.first[column] != oldPath) return false;
+        // Use a verified complete file only. Each row/column has its own target.
+        if (await target.exists()) await target.delete();
+        await temp.rename(target.path);
+        await txn.insert('sync_runtime', {'key': 'applying_remote', 'value': '1'}, conflictAlgorithm: ConflictAlgorithm.replace);
+        try {
+          await txn.update(table, {column: target.path}, where: 'id=? AND "$column"=?', whereArgs: [rowId, oldPath]);
+        } finally {
+          await txn.insert('sync_runtime', {'key': 'applying_remote', 'value': '0'}, conflictAlgorithm: ConflictAlgorithm.replace);
+        }
+        return true;
+      });
+    } finally {
+      client.close(force: true);
+      if (await temp.exists()) await temp.delete();
+    }
+  }
+
+  Future<void> _pullMissingMedia(Map<String, Object?> peer) async {
+    final db = await _db;
+    var attempted = 0;
+    var changed = false;
+    final now = DateTime.now();
+    _mediaRetryAfter.removeWhere((_, retry) => !retry.isAfter(now));
+    try {
+      for (final entry in _syncMediaColumns.entries) {
+        for (final column in entry.value) {
+          final table = entry.key;
+          final rows = await db.rawQuery(
+            'SELECT t.id, t."$column" AS media_path, i.entity_id FROM "$table" t '
+            'JOIN sync_row_identity i ON i.table_name=? AND i.local_row_id=CAST(t.id AS TEXT) '
+            'WHERE t."$column" IS NOT NULL AND t."$column"<>\'\' ORDER BY t.id', [table]);
+          for (final row in rows) {
+            if (_logoutInProgress || state.role == SyncRole.standalone || attempted >= 12) return;
+            final path = row['media_path'].toString();
+            if (await _ownedMediaFile(table, path) != null) continue;
+            final entity = row['entity_id'].toString();
+            final retryKey = '${peer['device_id']}|$table|$column|$entity|$path';
+            if (_mediaRetryAfter.containsKey(retryKey)) continue;
+            attempted++;
+            try {
+              if (await _pullOneMedia(peer, table, column, entity, row['id'].toString(), path)) {
+                changed = true;
+                continue;
+              }
+            } catch (_) {
+              // Files are independently retryable; one corrupt/offline file
+              // must not block other records or the durable SQL journal.
+            }
+            _mediaRetryAfter[retryKey] = DateTime.now().add(const Duration(minutes: 1));
+          }
+        }
+      }
+    } finally {
+      if (changed) SyncContentSignal.notify();
+    }
+  }
+
+  Future<void> _localizeMediaPaths(String table, String entity, Map<String, dynamic>? incoming,
+      Map<String, dynamic>? existing) async {
+    if (incoming == null) return;
+    for (final column in _syncMediaColumns[table] ?? const <String>[]) {
+      final before = existing?[column]?.toString();
+      final after = incoming[column]?.toString();
+      if (after == null || after.isEmpty) continue;
+      if (before != null && _mediaName(before) == _mediaName(after) &&
+          await _ownedMediaFile(table, before) != null) {
+        incoming[column] = before;
+      } else {
+        // Never expose a foreign absolute path to local image widgets. A
+        // deterministic app-owned placeholder becomes usable on file arrival.
+        incoming[column] = (await _syncMediaTarget(table, column, entity, _mediaName(after))).path;
+      }
+    }
+  }
+
   Future<void> _handleRequest(HttpRequest req) async {
     try {
+      if (req.method == 'POST' && req.uri.path == '/sync-media') {
+        await _serveSyncMedia(req);
+        return;
+      }
       if (req.method == 'POST' && req.uri.path == '/secondary-invite') {
         final body = jsonDecode(await utf8.decoder.bind(req).join()) as Map<String, dynamic>;
         if (_secondaryInviteToken == null ||
@@ -1663,6 +1885,7 @@ class DeviceSyncService extends StateNotifier<DeviceSyncState>
           'acked': acceptedIds,
           'applied': applied,
           'hasMore': outgoing.length >= 500,
+          'mediaVersion': 1,
         });
       }
       _json(req.response, 404, {'error': 'Not found'});
@@ -1719,6 +1942,7 @@ class DeviceSyncService extends StateNotifier<DeviceSyncState>
         try {
           // Incremental sync is intentionally small. The initial historical
           // database transfer is handled by the compressed bootstrap endpoint.
+          var supportsMedia = false;
           for (var round = 0; round < 100; round++) {
             final ops = await _operationsFor(peerId);
             final client = LocalSyncTls.pinnedClient(
@@ -1753,6 +1977,7 @@ class DeviceSyncService extends StateNotifier<DeviceSyncState>
               break;
             }
             if (response.statusCode != 200) break;
+            supportsMedia = body['mediaVersion'] == 1;
             for (final id in (body['acked'] as List? ?? const [])) {
               await db.insert('sync_ack', {
                 'op_id': id,
@@ -1791,6 +2016,7 @@ class DeviceSyncService extends StateNotifier<DeviceSyncState>
               break;
             }
           }
+          if (supportsMedia) await _pullMissingMedia(peer);
         } on TimeoutException {
           // Offline/stalled peer: the journal remains durable. The next timer
           // tick or lifecycle resume will retry without losing its position.
@@ -2424,6 +2650,10 @@ class DeviceSyncService extends StateNotifier<DeviceSyncState>
               existingRow = Map<String, dynamic>.from(rows.first);
           }
 
+          if (op['operation'] != 'delete') {
+            await _localizeMediaPaths(table, entityId, translatedPayload, existingRow);
+          }
+
           // A remote row can have the same integer primary key as an unrelated
           // local row. Never overwrite that unrelated row merely because the
           // ids happen to match. Allocate a fresh local id and remember the map.
@@ -2685,6 +2915,10 @@ class DeviceSyncService extends StateNotifier<DeviceSyncState>
         }, conflictAlgorithm: ConflictAlgorithm.replace);
       }
     });
+    if (applied > 0 && operations.any((op) {
+      final table = op['table_name']?.toString() ?? '';
+      return table.startsWith('family_') || table.startsWith('life_');
+    })) SyncContentSignal.notify();
     return applied;
   }
 
@@ -3022,6 +3256,8 @@ class DeviceSyncService extends StateNotifier<DeviceSyncState>
       if (await imported.exists()) {
         await imported.delete(recursive: true);
       }
+      final syncedMedia = Directory(p.join(documents.path, 'DayArkSyncedMedia'));
+      if (await syncedMedia.exists()) await syncedMedia.delete(recursive: true);
     } catch (_) {
       // Database access is removed even if an orphaned imported file cannot be
       // deleted immediately because the OS still has it open.

@@ -314,10 +314,10 @@ class FamilyConstellationViewState extends State<FamilyConstellationView>
   }
 
   /// Downsample local profile photos before crossing the Dart / JS bridge.
-  /// Pictures never leave the device, and repeated updates reuse thumbnails.
+  /// The HTML bridge is local; repeated updates reuse available thumbnails.
   Future<String?> _thumbnail(String? path) async {
     if (path == null || path.isEmpty) return null;
-    if (_thumbnails.containsKey(path)) return _thumbnails[path];
+    if (_thumbnails[path] != null) return _thumbnails[path];
     try {
       final file = File(path);
       if (!await file.exists()) return _thumbnails[path] = null;

@@ -6,6 +6,7 @@ class _FamilyTreeDetailScreenState extends State<FamilyTreeDetailScreen>
   final LifeArchiveRepository _lifeRepository = LifeArchiveRepository();
   late final TabController _tabController;
 
+  Timer? _remoteRefreshTimer;
   bool _loading = true;
   bool _refreshing = false;
   FamilyTree? _tree;
@@ -52,11 +53,26 @@ class _FamilyTreeDetailScreenState extends State<FamilyTreeDetailScreen>
         }
       });
     });
+    SyncContentSignal.revision.addListener(_scheduleRemoteRefresh);
     _load();
+  }
+
+  void _scheduleRemoteRefresh() {
+    _remoteRefreshTimer?.cancel();
+    _remoteRefreshTimer = Timer(const Duration(milliseconds: 350), () {
+      if (!mounted) return;
+      if (_loading || _refreshing) {
+        _scheduleRemoteRefresh();
+      } else {
+        _load();
+      }
+    });
   }
 
   @override
   void dispose() {
+    SyncContentSignal.revision.removeListener(_scheduleRemoteRefresh);
+    _remoteRefreshTimer?.cancel();
     _tabController.dispose();
     super.dispose();
   }
