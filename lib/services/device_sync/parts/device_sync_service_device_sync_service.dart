@@ -8,6 +8,7 @@ class DeviceSyncService extends StateNotifier<DeviceSyncState>
   }
 
   final DatabaseService _databaseService;
+  DeviceSyncState get aiChatSyncState => state;
   HttpServer? _server;
   LocalSyncTls? _tls;
   Future<LocalSyncTls>? _tlsLoading;
@@ -1495,6 +1496,10 @@ class DeviceSyncService extends StateNotifier<DeviceSyncState>
 
   Future<void> _handleRequest(HttpRequest req) async {
     try {
+      if (req.method == 'POST' && req.uri.path == '/ai-chat/sync') {
+        await _serveAiChatSync(req);
+        return;
+      }
       if (req.method == 'POST' && req.uri.path == '/sync-media') {
         await _serveSyncMedia(req);
         return;

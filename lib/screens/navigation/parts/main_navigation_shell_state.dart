@@ -198,6 +198,7 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell> {
     if (route == null) return null;
 
     final child = switch (route) {
+      RoutesStr.aiChat => const AiChatScreen(),
       RoutesStr.meterList => MeterListPage(
           onDesktopDashboard: _openDesktopDashboard,
         ),

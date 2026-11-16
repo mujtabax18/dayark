@@ -1,3 +1,4 @@
+import 'ai_stream.dart';
 import '../models/ai_models.dart';
 import '../models/ai_request.dart';
 import '../prompts/prompt_manager.dart';
@@ -46,6 +47,44 @@ class AiOrchestrator {
         selection: selection,
         messages: messages,
         settings: effectiveSettings,
+        allowRemoteProcessing: allowRemoteProcessing,
+        containsPrivateContext: containsPrivateContext,
+        allowPrivateContextOnline: allowPrivateContextOnline,
+      ),
+      cancellationToken: cancellationToken,
+    );
+  }
+
+  Stream<AiStreamEvent> stream({
+    required AiModelSelection selection,
+    required AiMessage message,
+    Iterable<AiMessage> history = const [],
+    AiSettings? settings,
+    bool allowRemoteProcessing = false,
+    bool containsPrivateContext = false,
+    bool allowPrivateContextOnline = false,
+    AiCancellationToken? cancellationToken,
+  }) async* {
+    cancellationToken?.throwIfCancelled();
+    final effective = settings ?? AiSettings();
+    List<AiMessage> messages;
+    try {
+      messages = promptManager.build(
+        settings: effective,
+        history: history,
+        message: message,
+      );
+    } on ArgumentError {
+      throw const AiException(
+        AiErrorCode.invalidRequest,
+        'Expected user input and user/assistant history.',
+      );
+    }
+    yield* gateway.stream(
+      AiRequest(
+        selection: selection,
+        messages: messages,
+        settings: effective,
         allowRemoteProcessing: allowRemoteProcessing,
         containsPrivateContext: containsPrivateContext,
         allowPrivateContextOnline: allowPrivateContextOnline,

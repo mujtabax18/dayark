@@ -1,3 +1,4 @@
+import '../../../ai/chat/ai_chat_screen.dart';
 import '../../../ai/settings/ai_settings_screen.dart';
 import 'dart:async';
 

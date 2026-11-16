@@ -28,3 +28,5 @@ export 'model_manager/native_models_stub.dart'
     if (dart.library.io) 'model_manager/native_models.dart';
 
 export 'settings/ai_preferences.dart';
+
+export 'core/ai_stream.dart';

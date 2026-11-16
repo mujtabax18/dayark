@@ -1,3 +1,4 @@
+import '../ai/chat/ai_chat_screen.dart';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -59,6 +60,7 @@ final GoRouter appRouter = GoRouter(
         'The requested route does not exist or is missing required data.',
   ),
   routes: [
+    GoRoute(path: RoutesStr.aiChat, builder: (context, state) => const AiChatScreen()),
     StatefulShellRoute.indexedStack(
       builder: (context, state, navigationShell) => MainNavigationShell(
         navigationShell: navigationShell,
@@ -341,6 +343,7 @@ final GoRouter appRouter = GoRouter(
 );
 
 abstract final class RoutesStr {
+  static const aiChat = '/ai-chat';
   static const home = '/';
   static const finance = '/finance';
   static const planner = '/planner';

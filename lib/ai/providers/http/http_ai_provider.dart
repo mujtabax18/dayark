@@ -1,3 +1,7 @@
+import 'dart:convert';
+
+import '../../core/ai_stream.dart';
+import '../../core/ai_attachments.dart';
 import '../../core/ai_cancellation.dart';
 import '../../core/ai_capabilities.dart';
 import '../../core/ai_error.dart';
@@ -10,7 +14,8 @@ import 'ai_http_transport.dart';
 /// Provider protocols remain inside adapters; all return the same chat values.
 enum AiHttpProtocol { openai, compatible, gemini, anthropic, ollama }
 
-abstract class HttpAiProvider implements AiManagedProvider {
+abstract class HttpAiProvider
+    implements AiManagedProvider, AiStreamingProvider {
   HttpAiProvider({
     required this.id,
     required this.protocol,
@@ -58,7 +63,23 @@ abstract class HttpAiProvider implements AiManagedProvider {
         RegExp(
           r'^claude-(?:(?:fable|mythos)(?:-|$)|(?:sonnet|haiku|opus)-(?:[5-9]|4-[7-9]))',
         ).hasMatch(modelId);
+    final imageModel = switch (protocol) {
+      AiHttpProtocol.openai => RegExp(
+        r'^(gpt-(?:4o|4\.1|[5-9]))',
+      ).hasMatch(modelId),
+      AiHttpProtocol.gemini =>
+        modelId.contains('gemini') && !modelId.contains('embed'),
+      AiHttpProtocol.anthropic => modelId.startsWith('claude-'),
+      AiHttpProtocol.ollama => modelId.startsWith('gemma4'),
+      AiHttpProtocol.compatible => false,
+    };
     return AiCapabilities(
+      attachments: imageModel
+          ? [
+              AiAttachmentKind.image,
+              if (protocol != AiHttpProtocol.ollama) AiAttachmentKind.document,
+            ]
+          : [],
       temperature: !reasoning && !fixedClaudeSampling,
       maxTemperature: protocol == AiHttpProtocol.anthropic ? 1 : 2,
       contextWindow: protocol == AiHttpProtocol.ollama,
@@ -101,6 +122,27 @@ abstract class HttpAiProvider implements AiManagedProvider {
     AiRequest request, {
     required AiCancellationToken cancellationToken,
   }) async {
+    final prepared = await _prepare(request, cancellationToken);
+    final data = await transport.send(
+      prepared.path,
+      method: 'POST',
+      body: prepared.body,
+      headers: prepared.headers,
+      cancellationToken: cancellationToken,
+    );
+    try {
+      return _response(request, data);
+    } on AiException {
+      rethrow;
+    } catch (_) {
+      throw invalidAiResponse;
+    }
+  }
+
+  Future<
+    ({String path, Map<String, Object?> body, Map<String, String> headers})
+  >
+  _prepare(AiRequest request, AiCancellationToken cancellationToken) async {
     cancellationToken.throwIfCancelled();
     if (!request.allowRemoteProcessing) {
       throw const AiException(
@@ -114,11 +156,14 @@ abstract class HttpAiProvider implements AiManagedProvider {
         'Request selected another provider.',
       );
     }
-    // Attachment upload/serialization is introduced in Part 5; never drop data.
-    if (request.messages.any((message) => message.attachments.isNotEmpty)) {
+    final prepared = prepareAiAttachments(request.messages);
+    final requestCaps = capabilitiesFor(request.selection.modelId);
+    if (prepared
+        .expand((m) => m.attachments)
+        .any((a) => !requestCaps.attachments.contains(a.kind))) {
       throw const AiException(
         AiErrorCode.unsupportedCapability,
-        'This adapter currently accepts text only.',
+        'The selected model cannot read these attachments. Choose a compatible model or remove them.',
       );
     }
     final settings = request.settings;
@@ -135,15 +180,24 @@ abstract class HttpAiProvider implements AiManagedProvider {
       );
     }
     final headers = await _headers(cancellationToken);
-    final system = request.messages
+    final system = prepared
         .where((m) => m.role == AiRole.system)
         .map((m) => m.text)
         .join('\n\n');
-    final conversation = request.messages
+    final conversation = prepared
         .where((m) => m.role != AiRole.system)
         .toList();
-    final List<Map<String, Object?>> messages = request.messages
-        .map((m) => <String, Object?>{'role': m.role.name, 'content': m.text})
+    final List<Map<String, Object?>> messages = prepared
+        .map(
+          (m) => <String, Object?>{
+            'role': m.role.name,
+            'content': _content(m),
+            if (protocol == AiHttpProtocol.ollama && m.attachments.isNotEmpty)
+              'images': m.attachments
+                  .map((a) => base64Encode(a.bytes!))
+                  .toList(),
+          },
+        )
         .toList();
     final Map<String, Object?> body;
     final String path;
@@ -180,9 +234,7 @@ abstract class HttpAiProvider implements AiManagedProvider {
             for (final m in conversation)
               {
                 'role': m.role == AiRole.assistant ? 'model' : 'user',
-                'parts': [
-                  {'text': m.text},
-                ],
+                'parts': _parts(m),
               },
           ],
           if (settings.temperature != null || settings.maxOutputTokens != null)
@@ -197,12 +249,31 @@ abstract class HttpAiProvider implements AiManagedProvider {
         path = 'messages';
         // Claude requires max_tokens and top-level system, never a system role.
         // Merge adjacent same-role messages to match the Messages contract.
-        final turns = <Map<String, String>>[];
+        final turns = <Map<String, Object?>>[];
         for (final m in conversation) {
           if (turns.isNotEmpty && turns.last['role'] == m.role.name) {
-            turns.last['content'] = '${turns.last['content']}\n\n${m.text}';
+            final previous = turns.removeLast();
+            if (previous['content'] is String && m.attachments.isEmpty) {
+              turns.add({
+                'role': m.role.name,
+                'content': '${previous['content']}\n\n${m.text}',
+              });
+              continue;
+            }
+            final blocks = previous['content'] is String
+                ? [
+                    {'type': 'text', 'text': previous['content']},
+                  ]
+                : (previous['content'] as List);
+            turns.add({
+              'role': m.role.name,
+              'content': [...blocks, ..._claudeParts(m)],
+            });
           } else {
-            turns.add({'role': m.role.name, 'content': m.text});
+            turns.add({
+              'role': m.role.name,
+              'content': m.attachments.isEmpty ? m.text : _claudeParts(m),
+            });
           }
         }
         body = {
@@ -229,20 +300,186 @@ abstract class HttpAiProvider implements AiManagedProvider {
           },
         };
     }
-    final data = await transport.send(
-      path,
-      method: 'POST',
-      body: body,
-      headers: headers,
-      cancellationToken: cancellationToken,
-    );
-    try {
-      return _response(request, data);
-    } on AiException {
-      rethrow;
-    } catch (_) {
-      throw invalidAiResponse;
+    return (path: path, body: body, headers: headers);
+  }
+
+  Object _content(AiMessage m) {
+    if (m.attachments.isEmpty || protocol == AiHttpProtocol.ollama) {
+      return m.text;
     }
+    return [
+      if (m.text.isNotEmpty) {'type': 'text', 'text': m.text},
+      for (final a in m.attachments)
+        if (a.kind == AiAttachmentKind.image)
+          {
+            'type': 'image_url',
+            'image_url': {
+              'url': 'data:${a.mimeType};base64,${base64Encode(a.bytes!)}',
+            },
+          }
+        else
+          {
+            'type': 'file',
+            'file': {
+              'filename': a.name ?? 'document.pdf',
+              'file_data':
+                  'data:${a.mimeType};base64,${base64Encode(a.bytes!)}',
+            },
+          },
+    ];
+  }
+
+  List<Map<String, Object?>> _parts(AiMessage m) => [
+    if (m.text.isNotEmpty) {'text': m.text},
+    for (final a in m.attachments)
+      {
+        'inlineData': {'mimeType': a.mimeType, 'data': base64Encode(a.bytes!)},
+      },
+  ];
+  List<Map<String, Object?>> _claudeParts(AiMessage m) => [
+    if (m.text.isNotEmpty) {'type': 'text', 'text': m.text},
+    for (final a in m.attachments)
+      {
+        'type': a.kind == AiAttachmentKind.image ? 'image' : 'document',
+        'source': {
+          'type': 'base64',
+          'media_type': a.mimeType,
+          'data': base64Encode(a.bytes!),
+        },
+      },
+  ];
+
+  @override
+  Stream<AiStreamEvent> stream(
+    AiRequest request, {
+    required AiCancellationToken cancellationToken,
+  }) async* {
+    final prepared = await _prepare(request, cancellationToken);
+    final body = {
+      ...prepared.body,
+      if (protocol != AiHttpProtocol.gemini) 'stream': true,
+      if (protocol == AiHttpProtocol.openai)
+        'stream_options': {'include_usage': true},
+    };
+    final path = protocol == AiHttpProtocol.gemini
+        ? prepared.path.replaceFirst(
+            ':generateContent',
+            ':streamGenerateContent',
+          )
+        : prepared.path;
+    final buffer = StringBuffer();
+    String? finish;
+    int? input, output;
+    var terminal = false;
+    await for (final event in transport.stream(
+      path,
+      body: body,
+      headers: prepared.headers,
+      query: protocol == AiHttpProtocol.gemini ? {'alt': 'sse'} : null,
+      ndjson: protocol == AiHttpProtocol.ollama,
+      cancellationToken: cancellationToken,
+    )) {
+      if (event['error'] != null || event['type'] == 'error') {
+        throw const AiException(
+          AiErrorCode.network,
+          'Provider interrupted the response. Retry this message.',
+        );
+      }
+      String delta = '';
+      switch (protocol) {
+        case AiHttpProtocol.openai:
+        case AiHttpProtocol.compatible:
+          if (event['_done'] == true) {
+            terminal = finish != null;
+            break;
+          }
+          final choices = aiList(event['choices']);
+          if (choices.isNotEmpty) {
+            final choice = aiObject(choices.first);
+            final content = aiObject(choice['delta']);
+            if (content['tool_calls'] != null ||
+                (content['role'] != null && content['role'] != 'assistant')) {
+              throw invalidAiResponse;
+            }
+            delta = content['content'] as String? ?? '';
+            finish = choice['finish_reason'] as String? ?? finish;
+            if (['tool_calls', 'function_call'].contains(finish)) {
+              throw invalidAiResponse;
+            }
+          }
+          if (event['usage'] case final Map usage) {
+            input = aiTokenCount(usage['prompt_tokens']);
+            output = aiTokenCount(usage['completion_tokens']);
+          }
+        case AiHttpProtocol.gemini:
+          final candidates = event['candidates'] as List? ?? [];
+          if (candidates.isNotEmpty) {
+            final candidate = aiObject(candidates.first);
+            final content = candidate['content'] as Map?;
+            delta = (content?['parts'] as List? ?? [])
+                .map(aiObject)
+                .where((p) => p['thought'] != true && p['text'] is String)
+                .map((p) => p['text'] as String)
+                .join();
+            finish = candidate['finishReason'] as String? ?? finish;
+            terminal = finish != null;
+          }
+          if (event['usageMetadata'] case final Map usage) {
+            input = aiTokenCount(usage['promptTokenCount']);
+            output = aiTokenCount(usage['candidatesTokenCount']);
+          }
+        case AiHttpProtocol.anthropic:
+          switch (event['type']) {
+            case 'message_start':
+              final message = aiObject(event['message']);
+              if (message['role'] != 'assistant') throw invalidAiResponse;
+              input = aiTokenCount(aiObject(message['usage'])['input_tokens']);
+            case 'content_block_start':
+              final block = aiObject(event['content_block']);
+              if (block['type'] == 'tool_use') throw invalidAiResponse;
+              if (block['type'] == 'text') {
+                delta = block['text'] as String? ?? '';
+              }
+            case 'content_block_delta':
+              final change = aiObject(event['delta']);
+              if (change['type'] == 'text_delta') {
+                delta = change['text'] as String? ?? '';
+              }
+            case 'message_delta':
+              finish = aiObject(event['delta'])['stop_reason'] as String?;
+              output = aiTokenCount(aiObject(event['usage'])['output_tokens']);
+            case 'message_stop':
+              terminal = finish != null;
+          }
+        case AiHttpProtocol.ollama:
+          if (event['message'] case final Map message) {
+            if (message['role'] != 'assistant' ||
+                message['tool_calls'] != null) {
+              throw invalidAiResponse;
+            }
+            delta = message['content'] as String? ?? '';
+          }
+          if (event['done'] == true) {
+            terminal = true;
+            finish = event['done_reason'] as String?;
+            input = aiTokenCount(event['prompt_eval_count']);
+            output = aiTokenCount(event['eval_count']);
+          }
+      }
+      if (delta.isNotEmpty) {
+        buffer.write(delta);
+        yield AiStreamEvent.delta(delta);
+      }
+    }
+    if (!terminal || buffer.toString().trim().isEmpty) throw invalidAiResponse;
+    yield AiStreamEvent.completed(
+      AiResponse(
+        selection: request.selection,
+        message: AiMessage(role: AiRole.assistant, text: buffer.toString()),
+        usage: AiUsage(inputTokens: input, outputTokens: output),
+        finishReason: finish,
+      ),
+    );
   }
 
   AiResponse _response(AiRequest request, Map<String, dynamic> data) {

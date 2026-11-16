@@ -1,3 +1,5 @@
+import '../../ai/chat/ai_chat_sync.dart';
+import '../../ai/chat/ai_chat_store.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -24,3 +26,5 @@ import 'local_sync_tls.dart';
 part 'parts/device_sync_service_sync_role.dart';
 part 'parts/device_sync_service_device_sync_service.dart';
 
+
+part 'parts/device_sync_ai_chat.dart';

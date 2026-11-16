@@ -1,3 +1,4 @@
+import '../../core/ai_stream.dart';
 import '../../core/ai_cancellation.dart';
 import '../../models/ai_models.dart';
 import '../../models/ai_request.dart';
@@ -30,4 +31,8 @@ abstract interface class AiOfflineRuntime {
   Future<void> load(AiLocalModel model, AiCancellationToken token);
   Future<AiResponse> generate(AiRequest request, AiCancellationToken token);
   Future<void> dispose();
+}
+
+abstract interface class AiStreamingOfflineRuntime {
+  Stream<AiStreamEvent> stream(AiRequest request, AiCancellationToken token);
 }

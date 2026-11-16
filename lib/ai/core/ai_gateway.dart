@@ -1,3 +1,8 @@
+import 'ai_attachments.dart';
+
+import 'dart:async';
+
+import 'ai_stream.dart';
 import '../models/ai_models.dart';
 import '../models/ai_request.dart';
 import '../models/ai_provider_models.dart';
@@ -47,49 +52,7 @@ class AiGateway {
   }) async {
     final token = cancellationToken ?? AiCancellationToken();
     token.throwIfCancelled();
-    final provider = _providers[request.selection.providerId];
-    if (provider == null) {
-      throw const AiException(
-        AiErrorCode.providerUnavailable,
-        'Selected AI provider is unavailable.',
-      );
-    }
-    if (provider.isRemote &&
-        (!request.allowRemoteProcessing ||
-            (request.containsPrivateContext &&
-                !request.allowPrivateContextOnline))) {
-      throw const AiException(
-        AiErrorCode.permissionDenied,
-        'Remote AI processing requires explicit authorization.',
-      );
-    }
-    try {
-      final capabilities = provider.capabilitiesFor(request.selection.modelId);
-      final settings = request.settings;
-      if ((settings.temperature != null &&
-              (!capabilities.temperature ||
-                  (capabilities.maxTemperature != null &&
-                      settings.temperature! > capabilities.maxTemperature!))) ||
-          (settings.maxOutputTokens != null &&
-              !capabilities.outputTokenLimit) ||
-          (settings.contextWindowTokens != null &&
-              !capabilities.contextWindow) ||
-          request.messages
-              .expand((m) => m.attachments)
-              .any((a) => !capabilities.attachments.contains(a.kind))) {
-        throw const AiException(
-          AiErrorCode.unsupportedCapability,
-          'The selected model does not support the requested input or settings.',
-        );
-      }
-    } on AiException {
-      rethrow;
-    } catch (_) {
-      throw const AiException(
-        AiErrorCode.invalidRequest,
-        'Unable to validate the selected model.',
-      );
-    }
+    final provider = _validate(request);
     for (var attempt = 0; attempt < retryPolicy.maxAttempts; attempt++) {
       token.throwIfCancelled();
       try {
@@ -122,6 +85,149 @@ class AiGateway {
       await waitForAiRetry(retryPolicy.initialDelay * (1 << attempt), token);
     }
     throw StateError('Unreachable retry state.');
+  }
+
+  AiProvider _validate(AiRequest request) {
+    final provider = _providers[request.selection.providerId];
+    if (provider == null) {
+      throw const AiException(
+        AiErrorCode.providerUnavailable,
+        'Selected AI provider is unavailable.',
+      );
+    }
+    if (provider.isRemote &&
+        (!request.allowRemoteProcessing ||
+            (request.containsPrivateContext &&
+                !request.allowPrivateContextOnline))) {
+      throw const AiException(
+        AiErrorCode.permissionDenied,
+        'Remote AI processing requires explicit authorization.',
+      );
+    }
+    try {
+      final capabilities = provider.capabilitiesFor(request.selection.modelId);
+      if (request.messages.fold<int>(0, (sum, m) => sum + m.text.length) >
+          4 * 1024 * 1024) {
+        throw const AiException(
+          AiErrorCode.invalidRequest,
+          'This conversation is too large. Start a new chat.',
+        );
+      }
+      final settings = request.settings;
+      if ((settings.temperature != null &&
+              (!capabilities.temperature ||
+                  (capabilities.maxTemperature != null &&
+                      settings.temperature! > capabilities.maxTemperature!))) ||
+          (settings.maxOutputTokens != null &&
+              !capabilities.outputTokenLimit) ||
+          (settings.contextWindowTokens != null &&
+              !capabilities.contextWindow) ||
+          request.messages
+              .expand((m) => m.attachments)
+              .any(
+                (a) =>
+                    !isAiTextDocument(a) &&
+                    !capabilities.attachments.contains(a.kind),
+              )) {
+        throw const AiException(
+          AiErrorCode.unsupportedCapability,
+          'The selected model does not support the requested input or settings.',
+        );
+      }
+    } on AiException {
+      rethrow;
+    } catch (_) {
+      throw const AiException(
+        AiErrorCode.invalidRequest,
+        'Unable to validate the selected model.',
+      );
+    }
+    return provider;
+  }
+
+  /// Streams are never replayed automatically after exposing provisional output.
+  Stream<AiStreamEvent> stream(
+    AiRequest request, {
+    AiCancellationToken? cancellationToken,
+  }) async* {
+    final token = cancellationToken ?? AiCancellationToken();
+    token.throwIfCancelled();
+    final provider = _validate(request);
+    if (provider is! AiStreamingProvider) {
+      final response = await generate(request, cancellationToken: token);
+      yield AiStreamEvent.completed(response);
+      return;
+    }
+    final streamToken = AiCancellationToken();
+    final remove = token.onCancel(streamToken.cancel);
+    final iterator = StreamIterator<AiStreamEvent>(
+      (provider as AiStreamingProvider).stream(
+        request,
+        cancellationToken: streamToken,
+      ),
+    );
+    var completed = false;
+    final text = StringBuffer();
+    try {
+      while (await runAiOperation(
+        (attempt) {
+          final detach = attempt.onCancel(streamToken.cancel);
+          return iterator.moveNext().whenComplete(detach);
+        },
+        token,
+        retryPolicy.attemptTimeout,
+      )) {
+        token.throwIfCancelled();
+        final event = iterator.current;
+        if (completed) {
+          throw const AiException(
+            AiErrorCode.invalidResponse,
+            'Unexpected data after the final response.',
+          );
+        }
+        if (event.response case final response?) {
+          if (response.selection.providerId != request.selection.providerId ||
+              response.selection.modelId != request.selection.modelId ||
+              (text.isNotEmpty && text.toString() != response.message.text)) {
+            throw const AiException(
+              AiErrorCode.invalidResponse,
+              'Stream response did not match the selected model or text.',
+            );
+          }
+          completed = true;
+        } else {
+          text.write(event.text);
+          if (text.length > 4 * 1024 * 1024) {
+            throw const AiException(
+              AiErrorCode.invalidResponse,
+              'AI response exceeds the supported size.',
+            );
+          }
+        }
+        yield event;
+      }
+      if (!completed) {
+        throw const AiException(
+          AiErrorCode.invalidResponse,
+          'AI response was interrupted before completion.',
+        );
+      }
+    } on AiException {
+      rethrow;
+    } catch (_) {
+      token.throwIfCancelled();
+      throw const AiException(
+        AiErrorCode.invalidResponse,
+        'Unable to read the AI response stream.',
+      );
+    } finally {
+      remove();
+      streamToken.cancel();
+      // Cancellation cleanup must not replace a timeout or provider error.
+      try {
+        await iterator.cancel();
+      } catch (_) {}
+    }
   }
 
   AiManagedProvider _managed(String providerId, bool allowRemoteProcessing) {

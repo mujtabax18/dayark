@@ -1,3 +1,5 @@
+import '../../core/ai_stream.dart';
+
 import 'dart:io';
 
 import 'package:llamadart/llamadart.dart';
@@ -12,7 +14,7 @@ AiOfflineRuntime createOfflineRuntime() => LlamadartRuntime();
 
 /// CPU llama.cpp runtime, created lazily and used only with local file sources.
 /// Own one instance per OfflineAiProvider. No downloads or network fallback.
-class LlamadartRuntime implements AiOfflineRuntime {
+class LlamadartRuntime implements AiOfflineRuntime, AiStreamingOfflineRuntime {
   LlamaEngine? _engine;
   String? _path;
   int? _contextSize;
@@ -59,6 +61,18 @@ class LlamadartRuntime implements AiOfflineRuntime {
     AiRequest request,
     AiCancellationToken token,
   ) async {
+    AiResponse? response;
+    await for (final event in stream(request, token)) {
+      response = event.response ?? response;
+    }
+    return response!;
+  }
+
+  @override
+  Stream<AiStreamEvent> stream(
+    AiRequest request,
+    AiCancellationToken token,
+  ) async* {
     token.throwIfCancelled();
     final engine = _engine;
     if (engine == null || _path == null) {
@@ -105,6 +119,7 @@ class LlamadartRuntime implements AiOfflineRuntime {
       )) {
         token.throwIfCancelled();
         buffer.write(chunk.text);
+        if (chunk.text.isNotEmpty) yield AiStreamEvent.delta(chunk.text);
         if (chunk.choices.isNotEmpty &&
             chunk.choices.first.finishReason != null) {
           finish = chunk.choices.first.finishReason;
@@ -123,11 +138,13 @@ class LlamadartRuntime implements AiOfflineRuntime {
           'Local model returned no text.',
         );
       }
-      return AiResponse(
-        selection: request.selection,
-        message: AiMessage(role: AiRole.assistant, text: buffer.toString()),
-        usage: usage,
-        finishReason: finish,
+      yield AiStreamEvent.completed(
+        AiResponse(
+          selection: request.selection,
+          message: AiMessage(role: AiRole.assistant, text: buffer.toString()),
+          usage: usage,
+          finishReason: finish,
+        ),
       );
     } on AiException {
       rethrow;

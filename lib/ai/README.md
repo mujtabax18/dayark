@@ -1,4 +1,4 @@
-# DayArk AI — roadmap Parts 1–4
+# DayArk AI — roadmap Parts 1–5
 
 Import `package:metersystem/ai/ai.dart`. All providers share `AiGateway` and
 `AiOrchestrator`. No provider is registered or activated during app startup.
@@ -107,7 +107,9 @@ model lifecycle management and benchmarks. See [Part 3](../../docs/AI_PART3.md)
 for usage and platform limits. Part 4 adds Settings → AI settings, including
 local model management, populated model pickers, editable provider/catalogue
 defaults, secure credentials and privacy controls. See [Part 4](../../docs/AI_PART4.md).
-Persistent chat, voice, memory, RAG and DayArk record access remain later parts.
+Part 5 adds persistent AI Chat, streaming, message operations, folders/search,
+attachments, export and optional paired-device sync. See [Part 5](../../docs/AI_PART5.md).
+Voice, memory, RAG and DayArk record access remain later parts.
 
 ## Verification
 

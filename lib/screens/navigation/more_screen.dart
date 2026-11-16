@@ -57,6 +57,13 @@ class MoreScreen extends StatelessWidget {
                   title: 'Tools',
                   items: [
                     _MoreItem(
+                      title: 'AI Chat',
+                      subtitle: 'Private conversations, attachments and local or online models',
+                      icon: Icons.auto_awesome_outlined,
+                      color: const Color(0xFF6366F1),
+                      onTap: () => openResponsiveModule(context, RoutesStr.aiChat),
+                    ),
+                    _MoreItem(
                       title: 'Life Archives',
                       subtitle: 'Private people, friendships, milestones and photo memories',
                       icon: Icons.account_tree_outlined,

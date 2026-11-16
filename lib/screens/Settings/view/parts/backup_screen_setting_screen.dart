@@ -63,6 +63,16 @@ class SettingScreen extends ConsumerWidget {
             SettingsGroup(
               children: [
                 SettingsTile(
+                  icon: Icons.chat_bubble_outline,
+                  title: 'AI Chat',
+                  subtitle: 'Conversations, attachments and model switching',
+                  color: AppColors.info,
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(builder: (_) => const AiChatScreen()),
+                  ),
+                ),
+                const SettingsDivider(),
+                SettingsTile(
                   icon: Icons.auto_awesome_outlined,
                   title: 'AI settings',
                   subtitle: 'Provider profiles, behavior, language and privacy',

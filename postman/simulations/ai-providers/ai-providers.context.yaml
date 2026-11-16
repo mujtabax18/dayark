@@ -30,6 +30,13 @@ assumptions:
     verification: On 2026-11-16, ran flutter test --no-pub --dart-define=DAYARK_AI_SIMULATION=true test/ai/ai_settings_simulation_test.dart with Postman CLI 1.74.0 on port 4017. The test passed for OpenAI, Gemini, Anthropic, Ollama and compatible profiles. Request events showed successful GET model discovery and selected-model connection checks for each member. Also reran tool/ai/verify_provider_simulation.dart; all five adapters passed generation and continued-history checks, with GET/POST request events observed. Fixtures remain synthetic and unchanged; no vendor requests or credentials were used.
     source: test/ai/ai_settings_simulation_test.dart; lib/ai/settings/ai_settings_screen.dart; tool/ai/verify_provider_simulation.dart; postman/mocks/*/default.js
     updated_at: '2026-11-16'
+  - id: part5-streaming-text-contracts
+    status: supported
+    claim: The five DayArk HTTP adapters normalize incremental SSE or NDJSON text, terminal responses and available token usage in the local text-only scenarios exercised.
+    reason: Existing contract-derived mocks were extended with streaming responses. Real Dart adapters passed streaming and non-streaming checks, while independent loopback tests covered fragmented UTF-8/event framing, incomplete streams, safe errors and consent. This does not establish live model access, native inference or every vendor event variant.
+    verification: On 2026-11-17, ran Postman CLI 1.74.0 on loopback port 4018 and tool/ai/verify_provider_simulation.dart http://127.0.0.1:4018/. All five adapters passed connection, discovery, generation, two or more streamed deltas, final Unicode text and token usage, with continued history. Request events showed GET model checks and successful POST generation/streaming for every member, including Gemini streamGenerateContent. The Flutter suite also exercised stream interruption, inactivity timeout, cancellation and inline attachment serialization against real loopback HTTP. No vendor keys or paid requests were used.
+    source: tool/ai/verify_provider_simulation.dart; test/ai/ai_streaming_test.dart; lib/ai/providers/http/ai_http_transport.dart; lib/ai/providers/http/http_ai_provider.dart; postman/mocks/*/default.js; docs/AI_PART5.md
+    updated_at: '2026-11-17'
 fingerprints:
   - id: part2-working-tree
     date: '2026-11-16'

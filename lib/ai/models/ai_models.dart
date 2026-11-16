@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 /// Provider-independent conversation values. No application records or secrets.
 enum AiRole { system, user, assistant }
 
@@ -10,7 +12,10 @@ class AiAttachment {
     required this.mimeType,
     required this.uri,
     this.name,
-  }) {
+    Uint8List? bytes,
+  }) : bytes = bytes == null
+           ? null
+           : Uint8List.fromList(bytes).asUnmodifiableView() {
     if (id.trim().isEmpty || mimeType.trim().isEmpty) {
       throw ArgumentError('Attachment ID and MIME type are required.');
     }
@@ -22,6 +27,7 @@ class AiAttachment {
   /// A reference only; adapters must explicitly resolve supported resources.
   final Uri uri;
   final String? name;
+  final Uint8List? bytes;
 }
 
 class AiMessage {

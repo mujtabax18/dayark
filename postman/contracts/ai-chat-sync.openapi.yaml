@@ -1,0 +1,51 @@
+openapi: 3.1.0
+info:
+  title: DayArk opt-in AI chat LAN synchronization
+  version: 1.0.0
+  description: Separate from AI providers and application-record synchronization. HTTPS with a paired certificate fingerprint on TCP 39393. Both devices must enable chat sync; only individually shared conversations are exchanged. No AI credentials or settings are sent.
+servers:
+  - url: https://paired-device:39393
+paths:
+  /ai-chat/sync:
+    post:
+      summary: Exchange shared conversation snapshots
+      description: Authenticates using the existing non-revoked paired-device token (including the existing rotation grace token). Requests and responses are limited to 32 MiB. Snapshot version 1 uses per-replica vector clocks; concurrent edits preserve a conflict copy and tombstones prevent resurrection. This is an explicit manual sync operation.
+      operationId: exchangeAiChats
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [deviceId, token, snapshot]
+              properties:
+                deviceId: {type: string, minLength: 1}
+                token: {type: string, minLength: 1, writeOnly: true}
+                snapshot:
+                  $ref: '#/components/schemas/Snapshot'
+      responses:
+        '200':
+          description: Incoming snapshot merged atomically; returns the resulting shared snapshot. Idempotent replays are ignored by vector clocks.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [snapshot]
+                properties:
+                  snapshot: {$ref: '#/components/schemas/Snapshot'}
+        '400': {description: Invalid version, fields, attachments, or over-limit stream; no partially imported batch}
+        '403': {description: Chat sync disabled, device unpaired/revoked or token invalid; no conversation data returned}
+        '413': {description: Shared batch exceeds 32 MiB; reduce individually shared conversations}
+components:
+  schemas:
+    Snapshot:
+      type: object
+      required: [version, conversations]
+      properties:
+        version: {type: integer, const: 1}
+        conversations:
+          type: array
+          maxItems: 1000
+          items:
+            type: object
+            description: AiConversation version 1 (lib/ai/chat/ai_conversation.dart). Includes title, folder, messages, attachments as base64, shared/deleted flags, revision, origin and vector clock. Excludes device-local profile IDs, API keys and provider settings. Deleted conversations contain no message or attachment payload.

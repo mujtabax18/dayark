@@ -1,3 +1,5 @@
+import '../core/ai_stream.dart';
+import '../core/ai_attachments.dart';
 import '../core/ai_cancellation.dart';
 import '../core/ai_error.dart';
 import '../core/ai_gateway.dart';
@@ -19,11 +21,36 @@ class AiConfiguredAssistant {
     required AiMessage message,
     Iterable<AiMessage> history = const [],
     AiProvider? offline,
+    String? profileId,
     bool containsPrivateContext = false,
     AiCancellationToken? cancellationToken,
   }) async {
+    AiResponse? response;
+    await for (final event in stream(
+      message: message,
+      history: history,
+      offline: offline,
+      profileId: profileId,
+      containsPrivateContext: containsPrivateContext,
+      cancellationToken: cancellationToken,
+    )) {
+      response = event.response ?? response;
+    }
+    return response!;
+  }
+
+  Stream<AiStreamEvent> stream({
+    required AiMessage message,
+    Iterable<AiMessage> history = const [],
+    AiProvider? offline,
+    String? profileId,
+    bool containsPrivateContext = false,
+    AiCancellationToken? cancellationToken,
+  }) async* {
     final preferences = store.load();
-    final profile = preferences.selectedProfile;
+    final profile = profileId == null
+        ? preferences.selectedProfile
+        : preferences.profiles.where((p) => p.id == profileId).firstOrNull;
     if (profile == null) {
       throw const AiException(
         AiErrorCode.providerUnavailable,
@@ -44,23 +71,22 @@ class AiConfiguredAssistant {
       offline: offline ?? local?.provider,
     );
     try {
-      return await AiOrchestrator(gateway: AiGateway(providers: [provider]))
-          .send(
-            selection: AiModelSelection(
-              providerId: provider.id,
-              modelId: profile.modelId,
-            ),
-            message: message,
-            history: history,
-            settings: settingsForCapabilities(
-              preferences.settings,
-              provider.capabilitiesFor(profile.modelId),
-            ),
-            allowRemoteProcessing: preferences.allowOnlineProcessing,
-            containsPrivateContext: containsPrivateContext,
-            allowPrivateContextOnline: preferences.allowPrivateContextOnline,
-            cancellationToken: cancellationToken,
-          );
+      yield* AiOrchestrator(gateway: AiGateway(providers: [provider])).stream(
+        selection: AiModelSelection(
+          providerId: provider.id,
+          modelId: profile.modelId,
+        ),
+        message: prepareAiAttachments([message]).single,
+        history: prepareAiAttachments(history),
+        settings: settingsForCapabilities(
+          preferences.settings,
+          provider.capabilitiesFor(profile.modelId),
+        ),
+        allowRemoteProcessing: preferences.allowOnlineProcessing,
+        containsPrivateContext: containsPrivateContext,
+        allowPrivateContextOnline: preferences.allowPrivateContextOnline,
+        cancellationToken: cancellationToken,
+      );
     } finally {
       if (provider is HttpAiProvider) provider.close();
     }

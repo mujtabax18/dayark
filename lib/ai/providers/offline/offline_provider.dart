@@ -1,3 +1,6 @@
+import '../../core/ai_stream.dart';
+import '../../core/ai_attachments.dart';
+
 import 'dart:async';
 
 import '../../core/ai_cancellation.dart';
@@ -12,7 +15,7 @@ import 'unsupported_runtime.dart'
     if (dart.library.io) 'llamadart_runtime.dart'
     as native;
 
-class OfflineAiProvider implements AiManagedProvider {
+class OfflineAiProvider implements AiManagedProvider, AiStreamingProvider {
   OfflineAiProvider({
     this.id = 'offline',
     required Iterable<AiLocalModel> models,
@@ -100,6 +103,25 @@ class OfflineAiProvider implements AiManagedProvider {
     AiRequest request, {
     required AiCancellationToken cancellationToken,
   }) => _exclusive(cancellationToken, (runtime) async {
+    request = _prepare(request);
+    final model = _model(request.selection.modelId);
+    await runtime.load(model, cancellationToken);
+    cancellationToken.throwIfCancelled();
+    return runtime.generate(request, cancellationToken);
+  });
+
+  AiRequest _prepare(AiRequest value) {
+    final request = value.messages.every((m) => m.attachments.isEmpty)
+        ? value
+        : AiRequest(
+            selection: value.selection,
+            messages: prepareAiAttachments(value.messages),
+            settings: value.settings,
+            allowRemoteProcessing: value.allowRemoteProcessing,
+            containsPrivateContext: value.containsPrivateContext,
+            allowPrivateContextOnline: value.allowPrivateContextOnline,
+          );
+
     if (request.selection.providerId != id) {
       throw const AiException(
         AiErrorCode.invalidRequest,
@@ -122,10 +144,63 @@ class OfflineAiProvider implements AiManagedProvider {
         'Settings exceed or differ from the configured local context.',
       );
     }
-    await runtime.load(model, cancellationToken);
-    cancellationToken.throwIfCancelled();
-    return runtime.generate(request, cancellationToken);
-  });
+    return request;
+  }
+
+  @override
+  Stream<AiStreamEvent> stream(
+    AiRequest request, {
+    required AiCancellationToken cancellationToken,
+  }) {
+    final localToken = AiCancellationToken();
+    final remove = cancellationToken.onCancel(localToken.cancel);
+    late StreamController<AiStreamEvent> controller;
+    controller = StreamController<AiStreamEvent>(
+      onListen: () {
+        unawaited(
+          _exclusive(localToken, (runtime) async {
+                final prepared = _prepare(request);
+                await runtime.load(
+                  _model(request.selection.modelId),
+                  localToken,
+                );
+                localToken.throwIfCancelled();
+                if (runtime is AiStreamingOfflineRuntime) {
+                  await for (final event
+                      in (runtime as AiStreamingOfflineRuntime).stream(
+                        prepared,
+                        localToken,
+                      )) {
+                    localToken.throwIfCancelled();
+                    controller.add(event);
+                  }
+                } else {
+                  controller.add(
+                    AiStreamEvent.completed(
+                      await runtime.generate(prepared, localToken),
+                    ),
+                  );
+                }
+              })
+              .then<void>(
+                (_) {},
+                onError: (Object error, StackTrace stack) {
+                  if (!controller.isClosed) controller.addError(error, stack);
+                },
+              )
+              .whenComplete(() {
+                remove();
+                return controller.close();
+              }),
+        );
+      },
+      onCancel: () {
+        localToken.cancel();
+        remove();
+      },
+    );
+    return controller.stream;
+  }
 
   @override
   Future<AiModelPage> listModels({

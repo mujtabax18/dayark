@@ -80,6 +80,14 @@ class _DesktopSidebar extends StatelessWidget {
                 const SizedBox(height: 12),
                 _DesktopSidebarSectionLabel(label: 'OTHER', expanded: expanded),
                 _DesktopNavItem(
+                  label: 'AI Chat',
+                  icon: Icons.auto_awesome_outlined,
+                  selectedIcon: Icons.auto_awesome,
+                  selected: _routeMatches(activeRoute, RoutesStr.aiChat),
+                  expanded: expanded,
+                  onTap: () => onDesktopRouteSelected(RoutesStr.aiChat),
+                ),
+                _DesktopNavItem(
                   label: 'Life Archives',
                   icon: Icons.account_tree_outlined,
                   selectedIcon: Icons.account_tree_rounded,
@@ -368,6 +376,7 @@ class _DesktopTopBar extends StatelessWidget {
 
   String _desktopPageTitle(String? route, int branchIndex) {
     return switch (route) {
+      RoutesStr.aiChat => 'AI Chat',
       RoutesStr.meterList => 'Meters',
       RoutesStr.grocery => 'Grocery',
       RoutesStr.expense => 'Expenses',

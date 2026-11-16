@@ -63,9 +63,24 @@ Future<void> main(List<String> args) async {
           response.usage.outputTokens != 5) {
         throw StateError('Provider response/usage was not normalized.');
       }
+      final streamed = await orchestrator
+          .stream(
+            selection: response.selection,
+            message: message,
+            history: history,
+            allowRemoteProcessing: true,
+          )
+          .toList();
+      if (streamed.where((e) => e.response == null).length < 2 ||
+          streamed.last.response?.message.text != response.message.text ||
+          streamed.last.response?.usage.outputTokens != 5) {
+        throw StateError(
+          'Provider streaming did not normalize deltas, completion or usage.',
+        );
+      }
       history.addAll([message, response.message]);
       stdout.writeln(
-        '${provider.id}: connection, discovery, generation and continued history passed',
+        '${provider.id}: connection, discovery, generation, streaming and continued history passed',
       );
     }
   } finally {
