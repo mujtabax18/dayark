@@ -119,7 +119,7 @@ flutter:
     - assets/images/
     - assets/family_tree/relationship_universe.html
 
-# Keep the local chat runtime small; hardware acceleration is Part 3.
+# Keep the local runtime CPU-only; Part 3 reports GPUs without enabling unvalidated backends.
 hooks:
   user_defines:
     llamadart:

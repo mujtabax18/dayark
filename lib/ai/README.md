@@ -1,4 +1,4 @@
-# DayArk AI — roadmap Parts 1 and 2
+# DayArk AI — roadmap Parts 1–3
 
 Import `package:metersystem/ai/ai.dart`. All providers share `AiGateway` and
 `AiOrchestrator`. No provider is registered or activated during app startup.
@@ -101,8 +101,10 @@ Local discovery lists configured files, and connection testing verifies loading.
   from having no application-data or action APIs in this module. User-supplied
   system-role history is rejected. The orchestrator owns no mutable chat state.
 
-Settings UI/storage, model downloads/hardware recommendations, persistent chat,
-voice, memory, RAG and DayArk record access remain later roadmap parts.
+Part 3 adds hardware reports, catalogue recommendations, verified model downloads,
+model lifecycle management and benchmarks. See [Part 3](../../docs/AI_PART3.md)
+for usage and platform limits. Settings UI/storage, persistent chat, voice,
+memory, RAG and DayArk record access remain later roadmap parts.
 
 ## Verification
 

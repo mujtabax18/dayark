@@ -21,3 +21,8 @@ export 'providers/http/ollama_provider.dart';
 export 'providers/http/compatible_provider.dart';
 export 'providers/offline/offline_provider.dart';
 export 'providers/offline/offline_runtime.dart';
+export 'hardware/ai_hardware.dart';
+export 'hardware/hardware_probe.dart';
+export 'model_manager/model_catalogue.dart';
+export 'model_manager/native_models_stub.dart'
+    if (dart.library.io) 'model_manager/native_models.dart';

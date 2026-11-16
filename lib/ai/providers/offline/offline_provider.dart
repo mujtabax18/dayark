@@ -161,6 +161,39 @@ class OfflineAiProvider implements AiManagedProvider {
     cancellationToken.throwIfCancelled();
   });
 
+  /// Explicit loading uses the same exclusive engine ownership as generation.
+  Future<void> loadModel(
+    String modelId, {
+    AiCancellationToken? cancellationToken,
+  }) => checkConnection(
+    modelId: modelId,
+    cancellationToken: cancellationToken ?? AiCancellationToken(),
+  );
+
+  Future<void> unloadModel({AiCancellationToken? cancellationToken}) =>
+      _exclusive(cancellationToken ?? AiCancellationToken(), (runtime) async {
+        await runtime.dispose();
+      });
+
+  /// Serializes file replacement/deletion against native loading and inference.
+  /// On failure the old registration survives and can be loaded again.
+  Future<void> maintainModel(
+    String modelId,
+    Future<AiLocalModel?> Function() mutation, {
+    AiCancellationToken? cancellationToken,
+  }) => _exclusive(cancellationToken ?? AiCancellationToken(), (runtime) async {
+    await runtime.dispose();
+    final replacement = await mutation();
+    if (replacement != null && replacement.id != modelId) {
+      throw ArgumentError('Replacement model ID differs.');
+    }
+    if (replacement == null) {
+      _models.remove(modelId);
+    } else {
+      _models[modelId] = replacement;
+    }
+  });
+
   /// Waits for cancelled native work to settle before releasing its memory.
   Future<void> dispose() => _disposal ??= _dispose();
   Future<void> _dispose() async {
