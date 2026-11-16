@@ -1,0 +1,18 @@
+simulation: dayark-ai-providers
+routing: path
+mocks:
+  - name: openai
+    routeKey: openai
+    path: postman/mocks/openai/config.yaml
+  - name: compatible
+    routeKey: compatible
+    path: postman/mocks/compatible/config.yaml
+  - name: gemini
+    routeKey: gemini
+    path: postman/mocks/gemini/config.yaml
+  - name: anthropic
+    routeKey: anthropic
+    path: postman/mocks/anthropic/config.yaml
+  - name: ollama
+    routeKey: ollama
+    path: postman/mocks/ollama/config.yaml

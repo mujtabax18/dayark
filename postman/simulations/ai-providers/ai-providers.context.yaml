@@ -1,0 +1,30 @@
+purpose:
+  stands_in_for: OpenAI, Gemini, Anthropic, Ollama and compatible chat/model endpoints.
+  unblocks: Local verification of the actual DayArk Dio adapters without vendor keys or paid generation.
+assumptions:
+  - id: text-generation-and-discovery-contracts
+    status: supported
+    claim: The adapters serialize text chat and model discovery using the documented endpoint and response shapes represented by these fixtures.
+    reason: Published vendor contracts support the shapes; local simulation observed actual adapter HTTP calls and normalized replies. This does not establish live credentials, quota, model access or all capabilities.
+    verification: On 2026-11-16, ran tool/ai/verify_provider_simulation.dart against Postman CLI 1.74.0 on loopback port 4017. All five providers passed connection checks, discovery, generation, Unicode replies and usage normalization while the same conversation history continued through each provider. Simulation request events showed GET discovery and POST generation for every member. No live vendor requests were sent. Initially found and corrected fixture body re-parsing and numeric query parameter serialization.
+    source: lib/ai/README.md contract references; tool/ai/verify_provider_simulation.dart; postman/mocks/*/default.js; test/ai/ai_http_provider_test.dart
+    updated_at: '2026-11-16'
+  - id: remote-model-discovery-implies-generation-access
+    status: unknown
+    claim: A model returned by a provider catalog is available for paid generation with the same credentials and all declared settings.
+    reason: Catalog reachability and membership do not establish inference entitlement, quota, or every model-specific capability. The fixtures use synthetic model IDs. Explicit capability overrides and live account verification remain necessary.
+    verification: No vendor credentials used. Connection checks intentionally only list model metadata and do not incur generation. Local tests verify optional selected-model membership across paginated catalogs.
+    source: lib/ai/providers/http/http_ai_provider.dart; test/ai/ai_http_provider_test.dart
+    updated_at: '2026-11-16'
+  - id: provider-owner-mock-reuse
+    status: unknown
+    claim: These synthetic fixtures match a provider-maintained published mock.
+    reason: Published-owner mock search was skipped because the CLI has no signed-in session. Fixtures were derived from official documentation and supplemented by Orbit, rather than copied from a maintained mock.
+    verification: postman whoami reported no account details; postman status is not a supported command in this CLI build. No workspace was initialized or published.
+    source: lib/ai/README.md; postman/mocks/*/config.yaml
+    updated_at: '2026-11-16'
+fingerprints:
+  - id: part2-working-tree
+    date: '2026-11-16'
+    commit: f222515 (dirty tree with Part 2 implementation)
+    cli: 1.74.0

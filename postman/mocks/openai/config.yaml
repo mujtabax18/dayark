@@ -1,0 +1,9 @@
+version: 1
+name: dayark-openai
+slug: dayark-openai
+protocol: http
+interceptRequests: true
+scenarios:
+  - name: default
+    path: ./default.js
+    default: true

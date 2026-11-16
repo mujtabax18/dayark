@@ -1,7 +1,8 @@
-import 'dart:async';
-
 import '../models/ai_models.dart';
 import '../models/ai_request.dart';
+import '../models/ai_provider_models.dart';
+import 'ai_managed_provider.dart';
+import 'ai_operation.dart';
 import 'ai_cancellation.dart';
 import 'ai_error.dart';
 import 'ai_provider.dart';
@@ -62,7 +63,10 @@ class AiGateway {
     try {
       final capabilities = provider.capabilitiesFor(request.selection.modelId);
       final settings = request.settings;
-      if ((settings.temperature != null && !capabilities.temperature) ||
+      if ((settings.temperature != null &&
+              (!capabilities.temperature ||
+                  (capabilities.maxTemperature != null &&
+                      settings.temperature! > capabilities.maxTemperature!))) ||
           (settings.maxOutputTokens != null &&
               !capabilities.outputTokenLimit) ||
           (settings.contextWindowTokens != null &&
@@ -85,30 +89,13 @@ class AiGateway {
     }
     for (var attempt = 0; attempt < retryPolicy.maxAttempts; attempt++) {
       token.throwIfCancelled();
-      final attemptToken = AiCancellationToken();
-      // Each attempt has its own deadline and adapter cancellation signal.
-      final timer = Timer(retryPolicy.attemptTimeout, attemptToken.cancel);
       try {
-        final response = await Future.any<AiResponse>([
-          Future.sync(
-            () => provider.generate(request, cancellationToken: attemptToken),
-          ),
-          token.whenCancelled.then<AiResponse>((_) {
-            attemptToken.cancel();
-            throw const AiException(
-              AiErrorCode.cancelled,
-              'AI request cancelled.',
-            );
-          }),
-          attemptToken.whenCancelled.then<AiResponse>((_) {
-            token.throwIfCancelled();
-            throw const AiException(
-              AiErrorCode.timeout,
-              'AI provider timed out.',
-              retryable: true,
-            );
-          }),
-        ]);
+        final response = await runAiOperation(
+          (attemptToken) =>
+              provider.generate(request, cancellationToken: attemptToken),
+          token,
+          retryPolicy.attemptTimeout,
+        );
         token.throwIfCancelled();
         if (response.selection.providerId != request.selection.providerId ||
             response.selection.modelId != request.selection.modelId) {
@@ -128,15 +115,87 @@ class AiGateway {
             attempt + 1 == retryPolicy.maxAttempts) {
           throw failure;
         }
-      } finally {
-        timer.cancel();
-        attemptToken.cancel();
       }
-      await Future.any<void>([
-        Future<void>.delayed(retryPolicy.initialDelay * (1 << attempt)),
-        token.whenCancelled,
-      ]);
+      await waitForAiRetry(retryPolicy.initialDelay * (1 << attempt), token);
     }
     throw StateError('Unreachable retry state.');
+  }
+
+  AiManagedProvider _managed(String providerId, bool allowRemoteProcessing) {
+    final provider = _providers[providerId];
+    if (provider == null) {
+      throw const AiException(
+        AiErrorCode.providerUnavailable,
+        'Selected AI provider is unavailable.',
+      );
+    }
+    if (provider.isRemote && !allowRemoteProcessing) {
+      throw const AiException(
+        AiErrorCode.permissionDenied,
+        'Remote AI processing requires explicit authorization.',
+      );
+    }
+    if (provider is! AiManagedProvider) {
+      throw const AiException(
+        AiErrorCode.unsupportedCapability,
+        'Provider management is unavailable.',
+      );
+    }
+    return provider;
+  }
+
+  Future<AiModelPage> listModels({
+    required String providerId,
+    String? cursor,
+    bool allowRemoteProcessing = false,
+    AiCancellationToken? cancellationToken,
+  }) async {
+    final token = cancellationToken ?? AiCancellationToken();
+    token.throwIfCancelled();
+    final provider = _managed(providerId, allowRemoteProcessing);
+    try {
+      return await runAiOperation(
+        (attempt) =>
+            provider.listModels(cursor: cursor, cancellationToken: attempt),
+        token,
+        retryPolicy.attemptTimeout,
+      );
+    } on AiException {
+      rethrow;
+    } catch (_) {
+      throw const AiException(
+        AiErrorCode.internal,
+        'AI model discovery failed.',
+      );
+    }
+  }
+
+  Future<AiConnectionResult> testConnection({
+    required String providerId,
+    String? modelId,
+    bool allowRemoteProcessing = false,
+    AiCancellationToken? cancellationToken,
+  }) async {
+    final token = cancellationToken ?? AiCancellationToken();
+    try {
+      token.throwIfCancelled();
+      final provider = _managed(providerId, allowRemoteProcessing);
+      await runAiOperation(
+        (attempt) => provider.checkConnection(
+          modelId: modelId,
+          cancellationToken: attempt,
+        ),
+        token,
+        retryPolicy.attemptTimeout,
+      );
+      return const AiConnectionResult.connected();
+    } on AiException catch (error) {
+      if (error.code == AiErrorCode.cancelled) rethrow;
+      return AiConnectionResult.failed(error);
+    } catch (_) {
+      return const AiConnectionResult.failed(
+        AiException(AiErrorCode.internal, 'AI connection test failed.'),
+      );
+    }
   }
 }

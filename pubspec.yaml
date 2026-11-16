@@ -27,6 +27,9 @@ dependencies:
 
   dio: ^5.11.1
 
+  # Embedded, on-device inference. Loaded only when the offline provider is used.
+  llamadart: 0.19.11
+
   intl: ^0.20.3
 
   path: ^1.9.1
@@ -115,3 +118,10 @@ flutter:
     - assets/svg/
     - assets/images/
     - assets/family_tree/relationship_universe.html
+
+# Keep the local chat runtime small; hardware acceleration is Part 3.
+hooks:
+  user_defines:
+    llamadart:
+      llamadart_native_runtimes: [llama_cpp]
+      llamadart_native_backends: [cpu]
