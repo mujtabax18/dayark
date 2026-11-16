@@ -23,6 +23,13 @@ assumptions:
     verification: postman whoami reported no account details; postman status is not a supported command in this CLI build. No workspace was initialized or published.
     source: lib/ai/README.md; postman/mocks/*/config.yaml
     updated_at: '2026-11-16'
+  - id: part4-settings-model-picker
+    status: supported
+    claim: The settings UI can discover selectable model IDs, test the selected model connection, and persist the selection for all five remote provider kinds against these local fixtures.
+    reason: The actual Flutter settings screen and Dio adapters ran against the existing loopback simulation. This supports the local integration path, not live account entitlement or new model inference compatibility.
+    verification: On 2026-11-16, ran flutter test --no-pub --dart-define=DAYARK_AI_SIMULATION=true test/ai/ai_settings_simulation_test.dart with Postman CLI 1.74.0 on port 4017. The test passed for OpenAI, Gemini, Anthropic, Ollama and compatible profiles. Request events showed successful GET model discovery and selected-model connection checks for each member. Also reran tool/ai/verify_provider_simulation.dart; all five adapters passed generation and continued-history checks, with GET/POST request events observed. Fixtures remain synthetic and unchanged; no vendor requests or credentials were used.
+    source: test/ai/ai_settings_simulation_test.dart; lib/ai/settings/ai_settings_screen.dart; tool/ai/verify_provider_simulation.dart; postman/mocks/*/default.js
+    updated_at: '2026-11-16'
 fingerprints:
   - id: part2-working-tree
     date: '2026-11-16'

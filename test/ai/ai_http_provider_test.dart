@@ -87,6 +87,44 @@ void main() {
       AiMessage(role: AiRole.user, text: 'Continue'),
     ],
   );
+  test(
+    'current Claude profiles omit rejected sampling overrides on the wire',
+    () async {
+      final provider = AnthropicProvider(
+        baseUrl: base,
+        credentials: () => 'test-key',
+      );
+      final channel = gateway(provider);
+      reply = (_, body) => {
+        'role': 'assistant',
+        'content': [
+          {'type': 'text', 'text': 'Hello'},
+        ],
+        'stop_reason': 'end_turn',
+        'usage': {'input_tokens': 2, 'output_tokens': 1},
+      };
+      for (final model in [
+        'claude-sonnet-5-5',
+        'claude-haiku-5-5',
+        'claude-opus-5-5',
+        'claude-fable-5-2',
+      ]) {
+        final capabilities = provider.capabilitiesFor(model);
+        expect(capabilities.temperature, isFalse);
+        final settings = settingsForCapabilities(
+          AiSettings(temperature: .7, maxOutputTokens: 2048),
+          capabilities,
+        );
+        await channel.generate(
+          request(provider.id, model: model, settings: settings),
+        );
+        expect(calls.last.body!.containsKey('temperature'), isFalse);
+        expect(calls.last.body!['model'], model);
+      }
+      expect(provider.capabilitiesFor('claude-sonnet-4-6').temperature, isTrue);
+    },
+  );
+
   Map<String, Object> chatResponse() => {
     'choices': [
       {

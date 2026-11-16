@@ -1,77 +1,142 @@
-# Part 4 — Complete AI settings (steps 22–28)
+# Part 4 — AI settings and local model management (steps 22–28)
 
-Open **Settings → AI settings**. Create named offline, OpenAI, Gemini,
-Anthropic, Ollama or compatible API profiles, enter the model ID, and save to
-select that profile. Existing profiles can be edited, selected or deleted.
-Online profiles offer connection tests and model discovery through the existing
-gateway. Discovery shows the first provider page and indicates additional pages.
-The screen performs no network requests until an authorized test/discovery action.
+Open **Settings → AI settings**. Two entries at the top open:
+
+- **Local model manager**: device hardware, recommendations, downloadable models,
+  installed models, download progress/cancellation, load/unload, benchmark,
+  updates and deletion. “Use model” returns the installed selection to settings;
+  save the profile to activate it. Choosing a local model from an online profile
+  creates a new offline draft and preserves the existing online profile.
+- **Provider and model defaults**: update model choices, default endpoints,
+  temperature and token presets. Offline defaults also expose an advanced,
+  validated catalogue editor for adding/updating pinned GGUF artifacts. Changes
+  prefill future profiles; saved profiles are changed only by editing and saving.
+
+The main screen uses model/language dropdowns, a temperature slider, token
+presets and populated endpoints. Custom IDs and profile URL overrides remain
+under Advanced profile configuration. Instructions, profile names and credentials
+are editable. Compatible APIs have no universal model ID; their local-server
+example must be discovered or changed for the user's actual endpoint.
 
 | Step | Implementation |
 | --- | --- |
-| 22 | Versioned, validated provider profiles and selected profile in SharedPreferences; adapter factory; connection testing and model discovery |
-| 23 | Profile-scoped FlutterSecureStorage credentials, resolved at request time; masked input; blank preserves saved credentials; explicit removal and profile deletion; destination changes clear old keys |
-| 24 | Persisted temperature, output and context limits; positive/finite validation; output cannot exceed configured context |
-| 25 | Saved custom instructions composed beneath protected DayArk instructions |
-| 26 | Automatic or custom input language; automatic, English, Urdu, Roman Urdu or custom output language |
-| 27 | Controls follow existing adapter/model capabilities; unsupported parameters omitted and temperature bounded when applying saved settings |
-| 28 | Online processing and private-context online sharing are independently opt-in; gateway enforces both before invoking a remote provider |
+| 22 | Saved profiles for all six provider kinds; populated model pickers; paginated discovery adds selectable IDs; connection checks use the existing gateway |
+| 23 | Profile-scoped FlutterSecureStorage credentials; masked input; blank preserves existing keys; explicit removal/deletion; changed destinations never reuse an old key |
+| 24 | Shared generation controls with numeric validation, concrete defaults, custom presets and output/context consistency checks |
+| 25 | Custom instructions remain beneath protected DayArk instructions |
+| 26 | Automatic, English, Urdu and Roman Urdu input/output choices; custom output language and preserved legacy custom input preferences |
+| 27 | Controls follow adapter/model capabilities; unsupported parameters omitted; model temperature ceilings respected |
+| 28 | Online processing and private-context sharing are separately opt-in; gateway enforces permissions before remote calls |
 
-## Integration
+## Local models
 
-`AiSettingsStore` separates ordinary JSON preferences from the OS credential
-store. Credentials are neither exported with profiles nor displayed on reload.
-Storage failures surface to the user; malformed preferences fail closed rather
-than silently enabling remote access. URLs reject embedded authentication,
-query strings and fragments. HTTP is limited to localhost. Self-hosted servers
-are remote processing, including local Ollama endpoints outside the app process.
+A shared lazy session owns the Part 3 manager and offline provider, using the
+app-support `ai-models` directory. Settings restores verified installations when
+an offline profile is opened; switching to offline or opening the manager can
+also initialize it. Nothing starts during ordinary app startup. Leaving Settings
+does not dispose an engine needed by chat. Configured offline sends automatically
+reuse the same session unless the caller explicitly supplies an existing provider.
+Concurrent maintenance/inference remains guarded by the Part 3 provider.
 
-`AiConfiguredAssistant` loads the selected profile and saved settings for each
-send and uses the existing `AiOrchestrator` / `AiGateway`. The caller retains
-history across model switches. Offline calls reuse the model manager's supplied
-provider (including its actual provider ID) and installed model IDs; the settings
-screen does not create, download or load another native engine.
+The catalogue initially offers the existing pinned Gemma 4 E4B Q4_0 artifact.
+Other Gemma 4 sizes are visible candidates without verified download artifacts;
+their Download buttons are disabled. Unsupported runtimes or insufficient
+measured RAM/storage also disable downloading. Unknown compatibility stays
+unknown and requires a successful load test. Device, quantization, language,
+license, context and resource information are visible before downloading.
+
+Each download has a review dialog with publisher, license, exact bytes, revision
+and SHA-256. The user's confirmation authorizes only that artifact download;
+it does not authorize sending chats online. Part 3 performs bounded streaming,
+redirect checks, checksum verification and atomic installation. The UI reports
+progress and supports cancellation; it blocks leaving during an active operation.
+Changing the pinned hash or revision in the defaults screen enables Update for
+an installed catalogue entry. Delete requires confirmation. Benchmark results
+include output throughput, load time and process-wide sampled peak RAM.
+
+The advanced catalogue editor accepts only validated metadata. Use exact
+publisher-provided hashes, lengths and revisions; metadata is not fetched from
+model-generated text. Saving defaults does not download anything. No automatic
+publisher refresh, background download or resume service is introduced.
+
+## Built-in choices and provenance
+
+Reviewed on 2026-11-16. These are starting choices, not guarantees of account
+entitlement or live availability. Discover models checks the selected provider.
+No extra tool/vision support is inferred from model names; the existing adapters
+continue to define supported request capabilities. Current Claude families that
+reject sampling overrides hide temperature and omit it from requests; see the
+[Sonnet migration guide](https://platform.claude.com/docs/en/models/sonnet-5-5/migration-guide).
+
+- OpenAI: GPT-6.1 Sol, GPT-6 Sol, GPT-5.6 Sol and GPT-5.4 mini;
+  [GPT-6.1 API documentation](https://developers.openai.com/api/docs/models/gpt-6.1-sol.md)
+  and [model catalogue](https://developers.openai.com/api/docs/models/all).
+- Gemini: Gemini 4 Hydrogen, Argon and Carbon, plus Gemini 3.8 Flash;
+  [Google's model catalogue](https://aistudio.google.com/docs/models).
+- Anthropic: Claude Sonnet, Haiku and Opus 5.5, plus Fable 5.2;
+  [Claude model overview](https://platform.claude.com/docs/en/models/overview).
+- Ollama: Gemma 4 E4B, 12B, 26B and 31B tags;
+  [Ollama publisher catalogue](https://ollama.com/library/gemma4).
+- Embedded GGUF: [ggml-org Gemma 4 E4B](https://huggingface.co/ggml-org/gemma-4-E4B-it-GGUF);
+  pinned artifact metadata and runtime limits remain documented in [Part 3](AI_PART3.md).
+
+## Persistence, privacy and integration
+
+Ordinary preferences, editable defaults and OS credentials are separate stores.
+Defaults contain no API keys and do not enable network access. Malformed defaults
+fall back visibly to built-in choices and can be repaired in the defaults screen.
+Malformed profile/privacy preferences fail closed. Provider URLs reject embedded
+credentials, query strings and fragments; HTTP is limited to loopback addresses.
 
 ```dart
+import 'package:metersystem/ai/ai.dart';
 import 'package:metersystem/ai/settings/ai_flutter_settings.dart';
 
-final store = AiSettingsStore(
-  preferences: await SharedPreferences.getInstance(),
-);
+final store = AiSettingsStore(preferences: await SharedPreferences.getInstance());
 final response = await AiConfiguredAssistant(store).send(
   message: AiMessage(role: AiRole.user, text: 'Salam'),
   history: previousMessages,
-  offline: existingModelManagerProvider,
   containsPrivateContext: false,
 );
 ```
 
-Future memory/RAG callers must mark private retrieved context with
-`containsPrivateContext: true`. Online requests with that flag require both
-`allowRemoteProcessing` and `allowPrivateContextOnline`; raw gateway callers
-continue to default to no remote authorization. These flags are application-owned
+Callers retain conversation history across provider switches. Future memory/RAG
+callers must mark private retrieved context with `containsPrivateContext: true`.
+That requires both online authorization flags. These are application-owned
 permissions, never values parsed from model output or custom instructions.
-The stored privacy choices authorize subsequent configured sends until revoked.
-No RAG, voice, chat database or application-record access is introduced here.
-
-The capability controls use the adapters' conservative metadata, including
-reasoning-model temperature restrictions. They do not assert newly discovered
-vision/tool support or infer reliable model context limits from model names.
+Self-hosted servers count as remote processing. The Flutter settings barrel is
+separate from `ai.dart`, preserving native Dart CLI tools.
 
 ## Verification and limits
 
-`test/ai/ai_settings_test.dart` checks persistence, credential separation/removal,
-URL validation, malformed selections, capability filtering, protected prompts,
-the private-context permission matrix, reuse of the offline provider with a
-separate profile ID, and settings-screen persistence/capability visibility.
-Credentials are mocked for automated tests. Actual OS keychain integration and
-cross-platform visual/native packaging need device validation; no real provider
-keys or paid generation are used by these tests. Existing dependencies are reused.
+```sh
+flutter test --no-pub
+# Static checks:
+dart analyze lib/ai test/ai tool/ai
+# Separate real HTTP/UI integration against local synthetic stand-ins:
+postman simulation run postman/simulations/ai-providers/ai-providers.sim.yaml --port 4017 --no-history --output ndjson
+flutter test --no-pub --dart-define=DAYARK_AI_SIMULATION=true test/ai/ai_settings_simulation_test.dart
+dart run tool/ai/verify_provider_simulation.dart
+```
 
-The Flutter settings barrel is separate from `ai.dart`, keeping the existing
-pure Dart inspection/provider CLI tools usable without `dart:ui`.
+Tests cover defaults persistence, invalid pinned metadata, secret separation,
+privacy permissions, capability-aware settings, download confirmation/cancellation,
+hardware/runtime restrictions, lifecycle controls, offline profile selection,
+and a native UI session using the real Part 3 manager with a tiny synthetic file
+and injected runtime. The separate simulation test drives the actual settings UI
+through discovery, model selection, connection testing and saved choices for
+all five remote provider kinds. OS credentials are mocked; no paid requests or
+multi-gigabyte model downloads are made during automated verification.
 
-Validation on 2026-11-16: all 72 Flutter tests passed; the six settings tests
-also passed after the final credential-destination assertion and Flutter barrel
-separation. Scoped analysis and `git diff --check` passed. The existing local
-hardware inspection CLI produced its hardware/recommendation report successfully.
+Live account/model access and native inference require device validation.
+This Linux host lacks AVX2, so the current pinned runtime cannot load real models
+here; the UI reports that restriction. Web shows an unsupported local manager.
+Existing Apple deployment target/runtime minimum limits from Part 3 remain;
+this UI work does not establish Apple packaging compatibility. No persistent
+chat database, voice, RAG or DayArk record access is added.
+
+Validation on 2026-11-17: all 79 Flutter tests passed, the separate five-provider
+settings UI simulation passed, the existing adapter simulation passed, scoped
+analysis reported no issues, and `git diff --check` passed. The simulation request
+log showed successful discovery/connection GETs and generation POSTs for every
+provider. Live provider entitlement and native device inference were not tested.

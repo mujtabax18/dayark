@@ -6,6 +6,7 @@ import '../core/ai_provider.dart';
 import '../models/ai_models.dart';
 import '../providers/http/http_ai_provider.dart';
 import 'ai_preferences.dart';
+import 'ai_local_models_factory.dart';
 import 'ai_settings_store.dart';
 
 /// Resolves saved selection and permissions for the existing, single chat workflow.
@@ -29,9 +30,18 @@ class AiConfiguredAssistant {
         'Choose an AI profile in settings.',
       );
     }
+    final local = profile.kind == AiProviderKind.offline && offline == null
+        ? await sharedAiLocalModels()
+        : null;
+    if (local?.busy ?? false) {
+      throw const AiException(
+        AiErrorCode.providerUnavailable,
+        'Local model maintenance is in progress.',
+      );
+    }
     final provider = profile.createProvider(
       credentials: () => store.credential(profile.id),
-      offline: offline,
+      offline: offline ?? local?.provider,
     );
     try {
       return await AiOrchestrator(gateway: AiGateway(providers: [provider]))

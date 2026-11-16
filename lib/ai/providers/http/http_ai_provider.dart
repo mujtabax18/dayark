@@ -52,8 +52,14 @@ abstract class HttpAiProvider implements AiManagedProvider {
     final reasoning =
         protocol == AiHttpProtocol.openai &&
         RegExp(r'^(o[1-9]|gpt-[5-9])').hasMatch(modelId);
+    // Claude 4.7+ and the Fable/Mythos families reject sampling overrides.
+    final fixedClaudeSampling =
+        protocol == AiHttpProtocol.anthropic &&
+        RegExp(
+          r'^claude-(?:(?:fable|mythos)(?:-|$)|(?:sonnet|haiku|opus)-(?:[5-9]|4-[7-9]))',
+        ).hasMatch(modelId);
     return AiCapabilities(
-      temperature: !reasoning,
+      temperature: !reasoning && !fixedClaudeSampling,
       maxTemperature: protocol == AiHttpProtocol.anthropic ? 1 : 2,
       contextWindow: protocol == AiHttpProtocol.ollama,
     );

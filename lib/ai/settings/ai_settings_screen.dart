@@ -6,12 +6,18 @@ import '../core/ai_capabilities.dart';
 import '../core/ai_gateway.dart';
 import '../providers/http/http_ai_provider.dart';
 import 'ai_preferences.dart';
+import 'ai_defaults.dart';
+import 'ai_defaults_screen.dart';
+import 'ai_local_models.dart';
+import 'ai_local_models_factory.dart';
+import 'ai_local_models_screen.dart';
 import 'ai_settings.dart';
 import 'ai_settings_store.dart';
 
 class AiSettingsScreen extends StatefulWidget {
-  const AiSettingsScreen({super.key, this.store});
+  const AiSettingsScreen({super.key, this.store, this.localModels});
   final AiSettingsStore? store;
+  final Future<AiLocalModels> Function()? localModels;
   @override
   State<AiSettingsScreen> createState() => _AiSettingsScreenState();
 }
@@ -19,6 +25,9 @@ class AiSettingsScreen extends StatefulWidget {
 class _AiSettingsScreenState extends State<AiSettingsScreen> {
   AiSettingsStore? _store;
   AiPreferences _preferences = AiPreferences();
+  AiDefaults _defaults = AiDefaults.builtIn();
+  AiLocalModels? _local;
+  final Set<String> _discovered = {};
   final _form = GlobalKey<FormState>();
   final _name = TextEditingController(),
       _model = TextEditingController(),
@@ -54,16 +63,40 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
           widget.store ??
           AiSettingsStore(preferences: await SharedPreferences.getInstance());
       final value = store.load();
+      AiDefaults defaults;
+      String? defaultsNotice;
+      try {
+        defaults = store.loadDefaults();
+      } catch (_) {
+        defaults = AiDefaults.builtIn();
+        defaultsNotice = 'Saved model defaults could not be read. Built-in choices are shown; save new defaults in Provider and model defaults.';
+      }
+      AiLocalModels? local;
+      if ((value.selectedProfile?.kind ?? AiProviderKind.offline) ==
+          AiProviderKind.offline) {
+        try {
+          local = await (widget.localModels ?? sharedAiLocalModels)();
+        } catch (_) {
+          defaultsNotice = 'Local model storage is unavailable. Retry Local model manager or choose an online provider.';
+        }
+      }
       if (!mounted) return;
       setState(() {
+        _local = local;
         _store = store;
+        _defaults = defaults;
+        _status = defaultsNotice;
         _preferences = value;
         _online = value.allowOnlineProcessing;
         _private = value.allowPrivateContextOnline;
         final s = value.settings;
-        _temperature.text = s.temperature?.toString() ?? '';
-        _output.text = s.maxOutputTokens?.toString() ?? '';
-        _context.text = s.contextWindowTokens?.toString() ?? '';
+        final d = defaults.forKind(
+          value.selectedProfile?.kind ?? AiProviderKind.offline,
+        );
+        _temperature.text = s.temperature?.toString() ?? '${d.temperature}';
+        _output.text = s.maxOutputTokens?.toString() ?? '${d.outputTokens}';
+        _context.text =
+            s.contextWindowTokens?.toString() ?? '${d.contextTokens}';
         _instructions.text = s.customInstructions;
         _inputLanguage.text = s.inputLanguage ?? '';
         _language = s.responseLanguage == null
@@ -88,12 +121,90 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
 
   void _select(AiProviderProfile? p) {
     _id = p?.id;
-    _name.text = p?.name ?? '';
-    _model.text = p?.modelId ?? '';
-    _url.text = p?.baseUrl ?? '';
     _kind = p?.kind ?? AiProviderKind.offline;
+    final defaults = _defaults.forKind(_kind);
+    _name.text = p?.name ?? aiProviderLabel(_kind);
+    _model.text = p?.modelId ?? defaults.models.first;
+    _url.text = p?.baseUrl ?? defaults.baseUrl ?? '';
+    _discovered.clear();
+    if (p == null && _preferences.profiles.isEmpty) _behaviorDefaults();
     _secret.clear();
     _clearSecret = false;
+  }
+
+  void _behaviorDefaults() {
+    final d = _defaults.forKind(_kind);
+    _temperature.text = '${d.temperature}';
+    _output.text = '${d.outputTokens}';
+    _context.text = '${d.contextTokens}';
+  }
+
+  void _changeKind(AiProviderKind kind) {
+    _kind = kind;
+    final d = _defaults.forKind(kind);
+    _name.text = aiProviderLabel(kind);
+    _model.text = d.models.first;
+    _url.text = d.baseUrl ?? '';
+    _secret.clear();
+    _discovered.clear();
+    _behaviorDefaults();
+  }
+
+  Future<AiLocalModels> _ensureLocal() async =>
+      _local ??= await (widget.localModels ?? sharedAiLocalModels)();
+  Future<void> _openManager() => _run(() async {
+    final models = await _ensureLocal();
+    if (!mounted) return;
+    final id = await Navigator.push<String>(
+      context,
+      MaterialPageRoute(
+        builder: (_) =>
+            AiLocalModelsScreen(models: models, defaults: _defaults),
+      ),
+    );
+    if (id != null && mounted) {
+      setState(() {
+        if (_kind != AiProviderKind.offline) {
+          _id = null;
+          _changeKind(AiProviderKind.offline);
+        }
+        _model.text = id;
+        _status = 'Local model selected. Save settings to use it.';
+      });
+    }
+  });
+  Future<void> _openDefaults() async {
+    if (_store == null) return;
+    final saved = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => AiDefaultsScreen(store: _store!)),
+    );
+    if (!mounted || saved != true) return;
+    setState(() {
+      _defaults = _store!.loadDefaults();
+    });
+  }
+
+  List<String> get _modelChoices => {
+    ...(_kind == AiProviderKind.offline
+        ? _defaults.catalogue.models.map((m) => m.id)
+        : _defaults.forKind(_kind).models),
+    if (_kind == AiProviderKind.offline && _local != null)
+      ..._local!.installed.map((m) => m.id),
+    ..._discovered,
+    if (_model.text.isNotEmpty) _model.text,
+  }.toList();
+  String _modelLabel(String id) {
+    if (_kind != AiProviderKind.offline) return id;
+    final model = _defaults.catalogue.models
+        .where((m) => m.id == id)
+        .firstOrNull;
+    final installed = _local?.installed.any((m) => m.id == id) ?? false;
+    return '${model?.name ?? id} · ${installed
+        ? 'installed'
+        : model?.artifact != null
+        ? 'download available'
+        : 'not installed'}';
   }
 
   AiProviderProfile _profile() => AiProviderProfile(
@@ -142,17 +253,33 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
         .where((p) => p.id == profile.id)
         .firstOrNull;
     return previous != null &&
-        (previous.kind != profile.kind || previous.baseUrl != profile.baseUrl);
+        (previous.kind != profile.kind ||
+            (previous.baseUrl ??
+                    AiDefaults.builtIn().forKind(previous.kind).baseUrl) !=
+                profile.baseUrl);
   }
 
   Future<void> _save() async {
     if (!_form.currentState!.validate()) return;
     await _run(() async {
       final p = _profile();
+      if (_kind == AiProviderKind.offline) {
+        final local = await _ensureLocal();
+        if (!local.installed.any((m) => m.id == p.modelId)) {
+          if (mounted) {
+            setState(
+              () => _status = 'Install this model in Local model manager before saving an offline profile.',
+            );
+          }
+          return;
+        }
+      }
       final settings = AiSettings(
         temperature: double.tryParse(_temperature.text),
         maxOutputTokens: int.tryParse(_output.text),
-        contextWindowTokens: int.tryParse(_context.text),
+        contextWindowTokens: _capabilities.contextWindow
+            ? int.tryParse(_context.text)
+            : null,
         customInstructions: _instructions.text,
         inputLanguage: _inputLanguage.text.trim().isEmpty
             ? null
@@ -214,13 +341,33 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
         final gateway = AiGateway(providers: [provider]);
         final String status;
         if (discover) {
-          final page = await gateway.listModels(
-            providerId: profile.id,
-            allowRemoteProcessing: true,
-          );
-          status = page.models.isEmpty
+          final ids = <String>{};
+          final cursors = <String>{};
+          String? cursor;
+          do {
+            final page = await gateway.listModels(
+              providerId: profile.id,
+              cursor: cursor,
+              allowRemoteProcessing: true,
+            );
+            ids.addAll(
+              page.models.map(
+                (m) =>
+                    m.selection.modelId.replaceFirst(RegExp(r'^models/'), ''),
+              ),
+            );
+            cursor = page.nextCursor;
+          } while (cursor != null &&
+              cursors.add(cursor) &&
+              cursors.length < 100);
+          if (mounted) {
+            setState(() {
+              _discovered.addAll(ids);
+            });
+          }
+          status = ids.isEmpty
               ? 'No models returned.'
-              : 'Available models: ${page.models.map((m) => m.selection.modelId).join(', ')}${page.nextCursor == null ? '' : ' (more available)'}';
+              : '${ids.length} models added to the model picker${cursor == null ? '.' : ' (provider has more pages).'}';
         } else {
           final result = await gateway.testConnection(
             providerId: profile.id,
@@ -264,20 +411,63 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
           (v) => required && (v?.trim().isEmpty ?? true) ? 'Required' : null,
     ),
   );
-  String? _number(String? v, {bool integer = false}) {
-    if (v == null || v.trim().isEmpty) return null;
-    final n = num.tryParse(v);
-    return n == null ||
-            !n.isFinite ||
-            (integer
-                ? int.tryParse(v) == null || n <= 0
-                : n < 0 || n > (_capabilities.maxTemperature ?? 2))
-        ? 'Enter a supported ${integer ? 'positive integer' : 'temperature'}.'
-        : null;
+  Widget _tokenPicker(
+    TextEditingController controller,
+    String label,
+    List<int> presets,
+  ) {
+    final selected = int.tryParse(controller.text) ?? presets[2];
+    final values = {...presets, selected}.toList()..sort();
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: DropdownButtonFormField<int>(
+        key: ValueKey('$label:$selected'),
+        initialValue: selected,
+        decoration: InputDecoration(
+          labelText: label,
+          border: const OutlineInputBorder(),
+        ),
+        items: values
+            .map((v) => DropdownMenuItem(value: v, child: Text('$v tokens')))
+            .toList(),
+        onChanged: (v) => setState(() {
+          controller.text = '$v';
+          if (controller == _output &&
+              _capabilities.contextWindow &&
+              v! > (int.tryParse(_context.text) ?? 4096)) {
+            _context.text = '${v * 2}';
+          }
+        }),
+        validator: (v) => v == null || v <= 0
+            ? 'Select a positive token limit.'
+            : controller == _context && v < (int.tryParse(_output.text) ?? 0)
+            ? 'Context must include the output token limit.'
+            : null,
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_store == null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('AI settings')),
+        body: Center(
+          child: _busy
+              ? const CircularProgressIndicator()
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(_status ?? 'Unable to load AI settings.'),
+                    TextButton(
+                      onPressed: _load,
+                      child: const Text('Retry loading'),
+                    ),
+                  ],
+                ),
+        ),
+      );
+    }
     final caps = _capabilities;
     return Scaffold(
       appBar: AppBar(title: const Text('AI settings')),
@@ -302,6 +492,33 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
                       onPressed: _load,
                       child: const Text('Retry loading'),
                     ),
+                  Card(
+                    child: Column(
+                      children: [
+                        ListTile(
+                          leading: const Icon(
+                            Icons.download_for_offline_outlined,
+                          ),
+                          title: const Text('Local model manager'),
+                          subtitle: const Text(
+                            'Hardware recommendations, downloads and installed models',
+                          ),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: _openManager,
+                        ),
+                        ListTile(
+                          leading: const Icon(Icons.tune),
+                          title: const Text('Provider and model defaults'),
+                          subtitle: const Text(
+                            'Update model choices, URLs and generation defaults',
+                          ),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: _openDefaults,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
                   const Text('Provider profiles'),
                   DropdownButtonFormField<String>(
                     key: ValueKey(_id),
@@ -330,41 +547,84 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
                     initialValue: _kind,
                     items: AiProviderKind.values
                         .map(
-                          (k) =>
-                              DropdownMenuItem(value: k, child: Text(k.name)),
+                          (k) => DropdownMenuItem(
+                            value: k,
+                            child: Text(aiProviderLabel(k)),
+                          ),
                         )
                         .toList(),
-                    onChanged: (v) => setState(() {
-                      _kind = v!;
-                      _url.clear();
-                      _secret.clear();
-                    }),
+                    onChanged: (v) {
+                      setState(() => _changeKind(v!));
+                      if (v == AiProviderKind.offline) {
+                        _run(() async {
+                          await _ensureLocal();
+                        });
+                      }
+                    },
                   ),
-                  _field(
-                    _model,
-                    _kind == AiProviderKind.offline
-                        ? 'Installed local model ID'
-                        : 'Model ID',
-                    required: true,
-                    rebuild: true,
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    key: ValueKey(
+                      '${_kind.name}:${_model.text}:${_discovered.length}:${_defaults.hashCode}',
+                    ),
+                    initialValue: _model.text,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Model',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: _modelChoices
+                        .map(
+                          (id) => DropdownMenuItem(
+                            value: id,
+                            child: Text(
+                              _modelLabel(id),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (id) => setState(() => _model.text = id!),
                   ),
                   if (_kind == AiProviderKind.offline)
+                    TextButton.icon(
+                      onPressed: _openManager,
+                      icon: const Icon(Icons.download),
+                      label: const Text('Browse and download local models'),
+                    ),
+                  if (_kind == AiProviderKind.compatible)
                     const Text(
-                      'Use a model installed with the local model manager. No model is loaded by this screen.',
+                      'Compatible servers choose their own model IDs. Discover models or edit the defaults for your server.',
                     ),
                   if (_kind != AiProviderKind.offline) ...[
-                    _field(
-                      _url,
-                      'Base URL (blank uses provider default)',
-                      rebuild: true,
-                      validator: (_) {
-                        try {
-                          _profile();
-                          return null;
-                        } catch (_) {
-                          return 'Enter a valid HTTPS URL (localhost may use HTTP). Compatible APIs require a URL.';
-                        }
-                      },
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Server endpoint'),
+                      subtitle: Text(_url.text),
+                    ),
+                    ExpansionTile(
+                      title: const Text('Advanced profile configuration'),
+                      children: [
+                        _field(
+                          _url,
+                          'Base URL (blank uses provider default)',
+                          rebuild: true,
+                          validator: (_) {
+                            try {
+                              _profile();
+                              return null;
+                            } catch (_) {
+                              return 'Enter a valid HTTPS URL (localhost may use HTTP). Compatible APIs require a URL.';
+                            }
+                          },
+                        ),
+                        _field(
+                          _model,
+                          'Custom model ID',
+                          required: true,
+                          rebuild: true,
+                        ),
+                      ],
                     ),
                     _field(
                       _secret,
@@ -395,31 +655,70 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
                   ],
                   const SizedBox(height: 24),
                   const Text('Behavior'),
-                  if (caps.temperature)
-                    _field(
-                      _temperature,
-                      'Temperature (blank uses model default)',
-                      validator: _number,
+                  if (caps.temperature) ...[
+                    Text(
+                      'Temperature: ${(double.tryParse(_temperature.text) ?? .7).clamp(0, caps.maxTemperature ?? 2).toStringAsFixed(1)}',
                     ),
+                    Slider(
+                      value: (double.tryParse(_temperature.text) ?? .7)
+                          .clamp(0, caps.maxTemperature ?? 2)
+                          .toDouble(),
+                      min: 0,
+                      max: caps.maxTemperature ?? 2,
+                      divisions: 20,
+                      onChanged: (value) => setState(
+                        () => _temperature.text = value.toStringAsFixed(2),
+                      ),
+                    ),
+                  ],
                   if (caps.outputTokenLimit)
-                    _field(
-                      _output,
-                      'Maximum output tokens',
-                      validator: (v) => _number(v, integer: true),
-                    ),
+                    _tokenPicker(_output, 'Maximum output tokens', [
+                      512,
+                      1024,
+                      2048,
+                      4096,
+                      8192,
+                      16384,
+                    ]),
                   if (caps.contextWindow)
-                    _field(
-                      _context,
-                      'Context window tokens',
-                      validator: (v) => _number(v, integer: true),
-                    ),
+                    _tokenPicker(_context, 'Context window tokens', [
+                      2048,
+                      4096,
+                      8192,
+                      16384,
+                      32768,
+                    ]),
+                  TextButton(
+                    onPressed: () => setState(_behaviorDefaults),
+                    child: const Text('Apply provider defaults'),
+                  ),
                   _field(_instructions, 'Custom instructions', lines: 4),
                   const Text(
                     'Custom instructions remain subject to DayArk permissions.',
                   ),
-                  _field(
-                    _inputLanguage,
-                    'Preferred input language (blank = automatic)',
+                  DropdownButtonFormField<String>(
+                    key: ValueKey('input:${_inputLanguage.text}'),
+                    initialValue: _inputLanguage.text,
+                    decoration: const InputDecoration(
+                      labelText: 'Input language',
+                    ),
+                    items:
+                        {
+                              '': 'Automatic',
+                              'English': 'English',
+                              'Urdu': 'Urdu',
+                              'Roman Urdu': 'Roman Urdu',
+                              if (_inputLanguage.text.isNotEmpty)
+                                _inputLanguage.text: _inputLanguage.text,
+                            }.entries
+                            .map(
+                              (e) => DropdownMenuItem(
+                                value: e.key,
+                                child: Text(e.value),
+                              ),
+                            )
+                            .toList(),
+                    onChanged: (v) => setState(() => _inputLanguage.text = v!),
                   ),
                   DropdownButtonFormField<String>(
                     key: ValueKey(_language),

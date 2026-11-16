@@ -4,6 +4,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'ai_preferences.dart';
+import 'ai_defaults.dart';
 
 /// Normal preferences never contain credentials. Storage failures propagate to the UI.
 class AiSettingsStore {
@@ -25,6 +26,23 @@ class AiSettingsStore {
   Future<void> save(AiPreferences value) async {
     if (!await preferences.setString(key, jsonEncode(value.toJson()))) {
       throw StateError('AI settings could not be saved.');
+    }
+  }
+
+  static const defaultsKey = 'dayark.ai.defaults.v1';
+  AiDefaults loadDefaults() {
+    final value = preferences.getString(defaultsKey);
+    return value == null
+        ? AiDefaults.builtIn()
+        : AiDefaults.fromJson(jsonDecode(value) as Map<String, dynamic>);
+  }
+
+  Future<void> saveDefaults(AiDefaults defaults) async {
+    if (!await preferences.setString(
+      defaultsKey,
+      jsonEncode(defaults.toJson()),
+    )) {
+      throw StateError('AI defaults could not be saved.');
     }
   }
 

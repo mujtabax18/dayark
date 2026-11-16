@@ -104,8 +104,10 @@ Local discovery lists configured files, and connection testing verifies loading.
 
 Part 3 adds hardware reports, catalogue recommendations, verified model downloads,
 model lifecycle management and benchmarks. See [Part 3](../../docs/AI_PART3.md)
-for usage and platform limits. Settings UI/storage, persistent chat, voice,
-memory, RAG and DayArk record access remain later roadmap parts.
+for usage and platform limits. Part 4 adds Settings → AI settings, including
+local model management, populated model pickers, editable provider/catalogue
+defaults, secure credentials and privacy controls. See [Part 4](../../docs/AI_PART4.md).
+Persistent chat, voice, memory, RAG and DayArk record access remain later parts.
 
 ## Verification
 

@@ -86,7 +86,7 @@ class AiModelCatalogue {
       AiCatalogueModel(
         id: spec.$1,
         name: spec.$2,
-        license: 'Gemma terms; review publisher license before download',
+        license: 'Apache-2.0; review publisher license before download',
         source: Uri.https('huggingface.co', '/google/${spec.$5}'),
         estimatedRamBytes: spec.$3 * aiGiB,
         estimatedDiskBytes: spec.$4 * aiGiB,

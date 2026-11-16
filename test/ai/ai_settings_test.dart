@@ -206,6 +206,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Temperature (blank uses model default)'), findsNothing);
     expect(find.text('Context window tokens'), findsNothing);
+    await tester.tap(find.text('Advanced profile configuration'));
+    await tester.pumpAndSettle();
     await tester.enterText(
       find.widgetWithText(
         TextFormField,
