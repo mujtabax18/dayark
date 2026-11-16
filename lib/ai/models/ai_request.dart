@@ -7,6 +7,8 @@ class AiRequest {
     required Iterable<AiMessage> messages,
     AiSettings? settings,
     this.allowRemoteProcessing = false,
+    this.containsPrivateContext = false,
+    this.allowPrivateContextOnline = false,
   }) : messages = List.unmodifiable(messages),
        settings = settings ?? AiSettings() {
     if (this.messages.isEmpty) throw ArgumentError('Messages are required.');
@@ -17,4 +19,6 @@ class AiRequest {
 
   /// Explicit authorization for this request, including its context/attachments.
   final bool allowRemoteProcessing;
+  final bool containsPrivateContext;
+  final bool allowPrivateContextOnline;
 }

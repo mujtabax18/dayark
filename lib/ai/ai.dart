@@ -26,3 +26,5 @@ export 'hardware/hardware_probe.dart';
 export 'model_manager/model_catalogue.dart';
 export 'model_manager/native_models_stub.dart'
     if (dart.library.io) 'model_manager/native_models.dart';
+
+export 'settings/ai_preferences.dart';

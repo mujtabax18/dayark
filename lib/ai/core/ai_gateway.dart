@@ -54,7 +54,10 @@ class AiGateway {
         'Selected AI provider is unavailable.',
       );
     }
-    if (provider.isRemote && !request.allowRemoteProcessing) {
+    if (provider.isRemote &&
+        (!request.allowRemoteProcessing ||
+            (request.containsPrivateContext &&
+                !request.allowPrivateContextOnline))) {
       throw const AiException(
         AiErrorCode.permissionDenied,
         'Remote AI processing requires explicit authorization.',

@@ -6,6 +6,7 @@ class AiSettings {
     this.contextWindowTokens,
     this.customInstructions = '',
     this.responseLanguage,
+    this.inputLanguage,
   }) {
     if (temperature != null && (!temperature!.isFinite || temperature! < 0)) {
       throw ArgumentError.value(temperature, 'temperature');
@@ -27,4 +28,21 @@ class AiSettings {
   final int? contextWindowTokens;
   final String customInstructions;
   final String? responseLanguage;
+  final String? inputLanguage;
+  Map<String, dynamic> toJson() => {
+    'temperature': temperature,
+    'maxOutputTokens': maxOutputTokens,
+    'contextWindowTokens': contextWindowTokens,
+    'customInstructions': customInstructions,
+    'responseLanguage': responseLanguage,
+    'inputLanguage': inputLanguage,
+  };
+  factory AiSettings.fromJson(Map<String, dynamic> json) => AiSettings(
+    temperature: (json['temperature'] as num?)?.toDouble(),
+    maxOutputTokens: json['maxOutputTokens'] as int?,
+    contextWindowTokens: json['contextWindowTokens'] as int?,
+    customInstructions: json['customInstructions'] as String? ?? '',
+    responseLanguage: json['responseLanguage'] as String?,
+    inputLanguage: json['inputLanguage'] as String?,
+  );
 }

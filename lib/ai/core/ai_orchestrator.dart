@@ -22,6 +22,8 @@ class AiOrchestrator {
     Iterable<AiMessage> history = const [],
     AiSettings? settings,
     bool allowRemoteProcessing = false,
+    bool containsPrivateContext = false,
+    bool allowPrivateContextOnline = false,
     AiCancellationToken? cancellationToken,
   }) async {
     cancellationToken?.throwIfCancelled();
@@ -45,6 +47,8 @@ class AiOrchestrator {
         messages: messages,
         settings: effectiveSettings,
         allowRemoteProcessing: allowRemoteProcessing,
+        containsPrivateContext: containsPrivateContext,
+        allowPrivateContextOnline: allowPrivateContextOnline,
       ),
       cancellationToken: cancellationToken,
     );

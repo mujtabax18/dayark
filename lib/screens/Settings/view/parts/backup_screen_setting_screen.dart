@@ -60,6 +60,22 @@ class SettingScreen extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            SettingsGroup(
+              children: [
+                SettingsTile(
+                  icon: Icons.auto_awesome_outlined,
+                  title: 'AI settings',
+                  subtitle: 'Provider profiles, behavior, language and privacy',
+                  color: AppColors.info,
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const AiSettingsScreen(),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
             _sectionHeader(
               context,
               context.l10n.tr('generalAppearance'),

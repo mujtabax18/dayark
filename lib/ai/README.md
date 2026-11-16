@@ -1,8 +1,9 @@
-# DayArk AI — roadmap Parts 1–3
+# DayArk AI — roadmap Parts 1–4
 
 Import `package:metersystem/ai/ai.dart`. All providers share `AiGateway` and
 `AiOrchestrator`. No provider is registered or activated during app startup.
-Existing screens, records, schema, sync and backup paths are unchanged.
+AI settings are available from Settings. Existing application records, schema, sync and backup paths are unchanged.
+See `docs/AI_PART4.md` for saved profiles, secure credentials and privacy integration.
 
 ## Implemented scope
 
