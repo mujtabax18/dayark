@@ -34,6 +34,7 @@ class AiMessage {
   AiMessage({
     required this.role,
     required this.text,
+    this.containsPrivateContext = false,
     Iterable<AiAttachment> attachments = const [],
   }) : attachments = List.unmodifiable(attachments) {
     if (text.trim().isEmpty && this.attachments.isEmpty) {
@@ -43,6 +44,9 @@ class AiMessage {
   final AiRole role;
   final String text;
   final List<AiAttachment> attachments;
+
+  /// Derived private context remains protected when history changes providers.
+  final bool containsPrivateContext;
 }
 
 class AiModelSelection {

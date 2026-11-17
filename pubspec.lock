@@ -1086,7 +1086,7 @@ packages:
     source: hosted
     version: "15.0.0"
   pdf_document:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: pdf_document
       sha256: "2c54177994eaacecf430b87afc9c12b03bfdc94cc07ea6eaa192eec20dd784c1"
@@ -1094,7 +1094,7 @@ packages:
     source: hosted
     version: "15.0.0"
   pdf_graphics:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: pdf_graphics
       sha256: "92ac07f90edf05bbabaead013bed056d47105014ee757f5293e4be2b7310c1ca"

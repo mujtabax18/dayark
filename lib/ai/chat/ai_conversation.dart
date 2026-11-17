@@ -41,6 +41,7 @@ class AiChatMessage {
     'id': id,
     'role': message.role.name,
     'text': message.text,
+    'containsPrivateContext': message.containsPrivateContext,
     'createdAt': createdAt.toUtc().toIso8601String(),
     'state': state.name,
     'provider': provider,
@@ -88,6 +89,7 @@ class AiChatMessage {
       message: AiMessage(
         role: role,
         text: j['text'] as String,
+        containsPrivateContext: j['containsPrivateContext'] == true,
         attachments: attachments,
       ),
       createdAt: DateTime.parse(j['createdAt'] as String),

@@ -80,6 +80,11 @@ List<AiMessage> prepareAiAttachments(Iterable<AiMessage> messages) {
         binary.add(a);
       }
     }
-    return AiMessage(role: m.role, text: text.toString(), attachments: binary);
+    return AiMessage(
+      role: m.role,
+      text: text.toString(),
+      attachments: binary,
+      containsPrivateContext: m.containsPrivateContext,
+    );
   }).toList();
 }

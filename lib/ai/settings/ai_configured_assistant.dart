@@ -1,4 +1,6 @@
 import '../core/ai_stream.dart';
+import '../memory/memory_context_service.dart';
+import '../rag/context_builder.dart';
 import '../core/ai_attachments.dart';
 import '../core/ai_cancellation.dart';
 import '../core/ai_error.dart';
@@ -14,7 +16,8 @@ import 'ai_settings_store.dart';
 /// Resolves saved selection and permissions for the existing, single chat workflow.
 /// The caller retains conversation history and the model manager's offline provider.
 class AiConfiguredAssistant {
-  const AiConfiguredAssistant(this.store);
+  const AiConfiguredAssistant(this.store, {this.memory});
+  final MemoryContextService? memory;
   final AiSettingsStore store;
 
   Future<AiResponse> send({
@@ -57,6 +60,19 @@ class AiConfiguredAssistant {
         'Choose an AI profile in settings.',
       );
     }
+    final preparedMessage = prepareAiAttachments([message]).single;
+    final preparedHistory = prepareAiAttachments(history);
+    final AiBuiltContext? context;
+    try {
+      context = await memory?.build(
+        message: preparedMessage,
+        history: preparedHistory,
+        settings: preferences.settings,
+      );
+    } on StateError catch (error) {
+      throw AiException(AiErrorCode.invalidRequest, error.message);
+    }
+    cancellationToken?.throwIfCancelled();
     final local = profile.kind == AiProviderKind.offline && offline == null
         ? await sharedAiLocalModels()
         : null;
@@ -71,34 +87,58 @@ class AiConfiguredAssistant {
       offline: offline ?? local?.provider,
     );
     try {
-      yield* AiOrchestrator(
-        gateway: AiGateway(
-          providers: [provider],
-          retryPolicy:
-              profile.kind == AiProviderKind.ollama ||
-                  profile.kind == AiProviderKind.offline
-              ? AiRetryPolicy.localInference()
-              : null,
-        ),
-      ).stream(
-        selection: AiModelSelection(
-          providerId: provider.id,
-          modelId: profile.modelId,
-        ),
-        message: prepareAiAttachments([message]).single,
-        history: prepareAiAttachments(history),
-        settings: settingsForCapabilities(
-          preferences.settings,
-          provider.capabilitiesFor(profile.modelId),
-          // Reasoning and the answer share Ollama's prediction budget. Let
-          // local chat finish naturally; Stop remains available.
-          applyOutputLimit: profile.kind != AiProviderKind.ollama,
-        ),
-        allowRemoteProcessing: preferences.allowOnlineProcessing,
-        containsPrivateContext: containsPrivateContext,
-        allowPrivateContextOnline: preferences.allowPrivateContextOnline,
-        cancellationToken: cancellationToken,
-      );
+      final events =
+          AiOrchestrator(
+            gateway: AiGateway(
+              providers: [provider],
+              retryPolicy:
+                  profile.kind == AiProviderKind.ollama ||
+                      profile.kind == AiProviderKind.offline
+                  ? AiRetryPolicy.localInference()
+                  : null,
+            ),
+          ).stream(
+            selection: AiModelSelection(
+              providerId: provider.id,
+              modelId: profile.modelId,
+            ),
+            message: preparedMessage,
+            history: context?.history ?? preparedHistory,
+            retrievedContext: context?.excerpts ?? '',
+            settings: settingsForCapabilities(
+              preferences.settings,
+              provider.capabilitiesFor(profile.modelId),
+              // Reasoning and the answer share Ollama's prediction budget. Let
+              // local chat finish naturally; Stop remains available.
+              applyOutputLimit: profile.kind != AiProviderKind.ollama,
+            ),
+            allowRemoteProcessing: preferences.allowOnlineProcessing,
+            containsPrivateContext:
+                containsPrivateContext ||
+                (context?.excerpts.isNotEmpty ?? false),
+            allowPrivateContextOnline: preferences.allowPrivateContextOnline,
+            cancellationToken: cancellationToken,
+          );
+      await for (final event in events) {
+        final response = event.response;
+        if (response != null && (context?.hits.isNotEmpty ?? false)) {
+          yield AiStreamEvent.completed(
+            AiResponse(
+              selection: response.selection,
+              message: AiMessage(
+                role: AiRole.assistant,
+                text: response.message.text + context!.references,
+                attachments: response.message.attachments,
+                containsPrivateContext: response.message.containsPrivateContext,
+              ),
+              usage: response.usage,
+              finishReason: response.finishReason,
+            ),
+          );
+        } else {
+          yield event;
+        }
+      }
     } finally {
       if (provider is HttpAiProvider) provider.close();
     }

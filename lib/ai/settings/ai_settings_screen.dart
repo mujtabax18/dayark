@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
 import '../core/ai_capabilities.dart';
+import '../memory/memory_screen.dart';
 import '../core/ai_gateway.dart';
 import '../providers/http/http_ai_provider.dart';
 import 'ai_preferences.dart';
@@ -512,6 +513,20 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
                           ),
                           trailing: const Icon(Icons.chevron_right),
                           onTap: _openManager,
+                        ),
+                        ListTile(
+                          leading: const Icon(Icons.psychology_outlined),
+                          title: const Text('Memory & knowledge'),
+                          subtitle: const Text(
+                            'Documents, approved memories, local search and summaries',
+                          ),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: () => Navigator.push<void>(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const MemoryScreen(),
+                            ),
+                          ),
                         ),
                         ListTile(
                           leading: const Icon(Icons.tune),

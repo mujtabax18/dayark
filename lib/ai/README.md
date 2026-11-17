@@ -170,3 +170,14 @@ Orbit supplied supplementary OpenAI/Anthropic/Ollama integration details.
 Published-owner mock search was skipped because Postman was signed out. This
 CLI version supports simulation but has no `postman status` command; `postman
 whoami` confirmed the unsigned session. No cloud workspace was created or changed.
+
+## Voice, memory and retrieval
+
+Part 6 adds the chat microphone dialog with offline Whisper, compatible online
+transcription, language selection and transcript review. Model installation and
+verification instructions are in [AI_PART6.md](../../docs/AI_PART6.md).
+
+Part 7 adds **Memory & knowledge** in chat and settings, with approved facts,
+document ingestion, local embeddings, keyword/hybrid retrieval, summaries,
+source links and persistent private-context permissions. See
+[AI_PART7.md](../../docs/AI_PART7.md) for setup, storage boundaries and validation.

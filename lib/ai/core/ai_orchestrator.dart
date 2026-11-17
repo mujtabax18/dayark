@@ -22,6 +22,7 @@ class AiOrchestrator {
     required AiMessage message,
     Iterable<AiMessage> history = const [],
     AiSettings? settings,
+    String retrievedContext = '',
     bool allowRemoteProcessing = false,
     bool containsPrivateContext = false,
     bool allowPrivateContextOnline = false,
@@ -35,6 +36,7 @@ class AiOrchestrator {
         settings: effectiveSettings,
         history: history,
         message: message,
+        retrievedContext: retrievedContext,
       );
     } on ArgumentError {
       throw const AiException(
@@ -48,7 +50,8 @@ class AiOrchestrator {
         messages: messages,
         settings: effectiveSettings,
         allowRemoteProcessing: allowRemoteProcessing,
-        containsPrivateContext: containsPrivateContext,
+        containsPrivateContext:
+            containsPrivateContext || retrievedContext.isNotEmpty,
         allowPrivateContextOnline: allowPrivateContextOnline,
       ),
       cancellationToken: cancellationToken,
@@ -60,6 +63,7 @@ class AiOrchestrator {
     required AiMessage message,
     Iterable<AiMessage> history = const [],
     AiSettings? settings,
+    String retrievedContext = '',
     bool allowRemoteProcessing = false,
     bool containsPrivateContext = false,
     bool allowPrivateContextOnline = false,
@@ -73,6 +77,7 @@ class AiOrchestrator {
         settings: effective,
         history: history,
         message: message,
+        retrievedContext: retrievedContext,
       );
     } on ArgumentError {
       throw const AiException(
@@ -86,7 +91,8 @@ class AiOrchestrator {
         messages: messages,
         settings: effective,
         allowRemoteProcessing: allowRemoteProcessing,
-        containsPrivateContext: containsPrivateContext,
+        containsPrivateContext:
+            containsPrivateContext || retrievedContext.isNotEmpty,
         allowPrivateContextOnline: allowPrivateContextOnline,
       ),
       cancellationToken: cancellationToken,

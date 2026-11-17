@@ -7,9 +7,12 @@ class AiRequest {
     required Iterable<AiMessage> messages,
     AiSettings? settings,
     this.allowRemoteProcessing = false,
-    this.containsPrivateContext = false,
+    bool containsPrivateContext = false,
     this.allowPrivateContextOnline = false,
-  }) : messages = List.unmodifiable(messages),
+  }) : containsPrivateContext =
+           containsPrivateContext ||
+           messages.any((m) => m.containsPrivateContext),
+       messages = List.unmodifiable(messages),
        settings = settings ?? AiSettings() {
     if (this.messages.isEmpty) throw ArgumentError('Messages are required.');
   }

@@ -18,6 +18,9 @@ import '../../screens/navigation/widgets/desktop_navigation_scope.dart';
 import '../../utlis/app_router.dart';
 import '../core/ai_attachments.dart';
 import '../voice/voice_input_dialog.dart';
+import '../memory/memory_store.dart';
+import '../memory/memory_screen.dart';
+import '../memory/memory_context_service.dart';
 import '../models/ai_models.dart';
 import '../settings/ai_preferences.dart';
 import '../settings/ai_configured_assistant.dart';
@@ -80,7 +83,14 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen>
       _settings = settings;
       _preferences = settings.load();
       _profileId = _preferences.selectedProfileId;
-      final assistant = AiConfiguredAssistant(settings);
+      final memory = widget.engine == null ? await sharedMemoryManager() : null;
+      if (!mounted) return;
+      final assistant = AiConfiguredAssistant(
+        settings,
+        memory: memory == null
+            ? null
+            : MemoryContextService(memory, chats: store),
+      );
       _chat = AiChatController(
         store: store,
         engine:
@@ -644,6 +654,18 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen>
                     Text('[Image: ${alt ?? title ?? uri.toString()}]'),
                 onTapLink: (text, href, title) async {
                   final uri = Uri.tryParse(href ?? '');
+                  if (uri?.scheme == 'dayark-source') {
+                    final memory = await sharedMemoryManager();
+                    if (!mounted) return;
+                    await showMemorySource(
+                      context,
+                      memory,
+                      uri!.path,
+                      hash: uri.queryParameters['hash'],
+                      offset: int.tryParse(uri.queryParameters['offset'] ?? ''),
+                    );
+                    return;
+                  }
                   if (uri != null &&
                       ['https', 'http'].contains(uri.scheme) &&
                       uri.userInfo.isEmpty) {
@@ -769,6 +791,16 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen>
           overflow: TextOverflow.ellipsis,
         ),
         actions: [
+          IconButton(
+            tooltip: 'Memory & knowledge',
+            onPressed: chat.busy
+                ? null
+                : () => Navigator.push<void>(
+                    context,
+                    MaterialPageRoute(builder: (_) => const MemoryScreen()),
+                  ),
+            icon: const Icon(Icons.psychology_outlined),
+          ),
           IconButton(
             tooltip: 'AI settings',
             onPressed: chat.busy ? null : _settingsPage,
@@ -1254,6 +1286,7 @@ class _AiEditMessageDialogState extends State<_AiEditMessageDialog> {
                   role: AiRole.user,
                   text: _input.text.trim(),
                   attachments: _attachments,
+                  containsPrivateContext: widget.message.containsPrivateContext,
                 ),
               ),
         child: const Text('Save and regenerate'),

@@ -85,7 +85,7 @@ class AiGateway {
             'AI provider returned a response for another model.',
           );
         }
-        return response;
+        return _preservePrivacy(response, request);
       } catch (error) {
         token.throwIfCancelled();
         final failure = error is AiException
@@ -226,7 +226,11 @@ class AiGateway {
             );
           }
         }
-        yield event;
+        yield event.response == null
+            ? event
+            : AiStreamEvent.completed(
+                _preservePrivacy(event.response!, request),
+              );
       }
       if (!completed) {
         throw const AiException(
@@ -251,6 +255,21 @@ class AiGateway {
       } catch (_) {}
     }
   }
+
+  AiResponse _preservePrivacy(AiResponse response, AiRequest request) =>
+      !request.containsPrivateContext || response.message.containsPrivateContext
+      ? response
+      : AiResponse(
+          selection: response.selection,
+          message: AiMessage(
+            role: response.message.role,
+            text: response.message.text,
+            attachments: response.message.attachments,
+            containsPrivateContext: true,
+          ),
+          usage: response.usage,
+          finishReason: response.finishReason,
+        );
 
   AiManagedProvider _managed(String providerId, bool allowRemoteProcessing) {
     final provider = _providers[providerId];
