@@ -102,6 +102,8 @@ dependencies:
 
   genealogy_chart: ^1.0.2
   webview_all: ^1.4.12
+  record: ^7.2.0
+  sherpa_onnx: ^2.0.1
 
 
 dev_dependencies:

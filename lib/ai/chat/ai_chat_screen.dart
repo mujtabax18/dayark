@@ -17,6 +17,7 @@ import '../../services/device_sync/device_sync_service.dart';
 import '../../screens/navigation/widgets/desktop_navigation_scope.dart';
 import '../../utlis/app_router.dart';
 import '../core/ai_attachments.dart';
+import '../voice/voice_input_dialog.dart';
 import '../models/ai_models.dart';
 import '../settings/ai_preferences.dart';
 import '../settings/ai_configured_assistant.dart';
@@ -1022,6 +1023,25 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen>
                           tooltip: 'Attach files',
                           onPressed: chat.busy ? null : _pick,
                           icon: const Icon(Icons.attach_file),
+                        ),
+                        IconButton(
+                          tooltip: 'Voice input',
+                          onPressed: chat.busy || _syncing
+                              ? null
+                              : () async {
+                                  final transcript = await showDialog<String>(
+                                    context: context,
+                                    barrierDismissible: false,
+                                    builder: (_) =>
+                                        VoiceInputDialog(settings: _settings!),
+                                  );
+                                  if (!mounted || transcript == null) return;
+                                  _composer.text = [
+                                    _composer.text,
+                                    transcript,
+                                  ].where((s) => s.isNotEmpty).join('\n');
+                                },
+                          icon: const Icon(Icons.mic_none),
                         ),
                         Expanded(
                           child: TextField(

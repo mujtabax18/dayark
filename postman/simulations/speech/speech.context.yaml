@@ -1,0 +1,9 @@
+contract: https://developers.openai.com/api/reference/resources/audio/subresources/transcriptions/methods/create
+assumptions:
+  - OpenAI-compatible endpoints implement the same multipart request and JSON text response.
+  - Synthetic fixture text establishes adapter behavior, not recognition accuracy.
+evidence:
+  - Real Dio multipart requests against Postman simulation for success, 429 and malformed JSON shape.
+limitations:
+  - No real vendor audio or credentials used.
+  - Orbit unavailable by DNS; authenticated discovery skipped because CLI status unavailable.
