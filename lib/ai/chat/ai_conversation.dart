@@ -15,16 +15,18 @@ class AiChatMessage {
     this.provider,
     this.model,
     this.error,
+    this.diagnostics,
   });
   final String id;
   final AiMessage message;
   final DateTime createdAt;
   final AiChatMessageState state;
-  final String? provider, model, error;
+  final String? provider, model, error, diagnostics;
   AiChatMessage copyWith({
     AiMessage? message,
     AiChatMessageState? state,
     String? error,
+    String? diagnostics,
   }) => AiChatMessage(
     id: id,
     message: message ?? this.message,
@@ -33,8 +35,9 @@ class AiChatMessage {
     provider: provider,
     model: model,
     error: error,
+    diagnostics: diagnostics ?? this.diagnostics,
   );
-  Map<String, dynamic> toJson() => {
+  Map<String, dynamic> toJson({bool includeDiagnostics = true}) => {
     'id': id,
     'role': message.role.name,
     'text': message.text,
@@ -43,6 +46,7 @@ class AiChatMessage {
     'provider': provider,
     'model': model,
     'error': error,
+    if (includeDiagnostics) 'diagnostics': diagnostics,
     'attachments': message.attachments
         .map(
           (a) => {
@@ -91,6 +95,7 @@ class AiChatMessage {
       provider: j['provider'] as String?,
       model: j['model'] as String?,
       error: j['error'] as String?,
+      diagnostics: j['diagnostics'] as String?,
     );
   }
 }
@@ -173,7 +178,9 @@ class AiConversation {
     'revision': revision,
     'origin': origin,
     'clock': clock,
-    'messages': messages.map((m) => m.toJson()).toList(),
+    'messages': messages
+        .map((m) => m.toJson(includeDiagnostics: !sync))
+        .toList(),
   };
   factory AiConversation.fromJson(Map<String, dynamic> j) {
     if (j['version'] != 1) {

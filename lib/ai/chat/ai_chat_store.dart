@@ -63,6 +63,39 @@ class AiChatStore {
       'INSERT OR REPLACE INTO chat_settings(key,value) VALUES (?,?)',
       ['sync', '$value'],
     );
+    if (value) {
+      final rows = await database
+          .customSelect('SELECT payload FROM conversations')
+          .get();
+      for (final row in rows) {
+        final conversation = AiConversation.fromJson(
+          jsonDecode(row.read<String>('payload')) as Map<String, dynamic>,
+        );
+        if (!conversation.shareWithDevices) {
+          await save(
+            conversation.copyWith(shareWithDevices: true),
+            expectedRevision: conversation.revision,
+          );
+        }
+      }
+    }
+    _changes.add(null);
+  }
+
+  Future<bool> get replyNotificationsEnabled async =>
+      (await database
+              .customSelect(
+                "SELECT value FROM chat_settings WHERE key='reply_notifications'",
+              )
+              .getSingleOrNull())
+          ?.read<String>('value') !=
+      'false';
+
+  Future<void> setReplyNotificationsEnabled(bool value) async {
+    await database.customStatement(
+      'INSERT OR REPLACE INTO chat_settings(key,value) VALUES (?,?)',
+      ['reply_notifications', '$value'],
+    );
     _changes.add(null);
   }
 
@@ -149,6 +182,10 @@ class AiChatStore {
   }
 
   Future<AiConversation> save(AiConversation c, {int? expectedRevision}) async {
+    final shouldShare = c.shareWithDevices || await syncEnabled;
+    if (shouldShare != c.shareWithDevices) {
+      c = c.copyWith(shareWithDevices: shouldShare);
+    }
     final origin = await deviceId;
     final saved = await database.transaction(() async {
       final previous = await get(c.id);

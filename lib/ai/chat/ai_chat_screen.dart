@@ -14,6 +14,8 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../services/device_sync/device_sync_service.dart';
+import '../../screens/navigation/widgets/desktop_navigation_scope.dart';
+import '../../utlis/app_router.dart';
 import '../core/ai_attachments.dart';
 import '../models/ai_models.dart';
 import '../settings/ai_preferences.dart';
@@ -21,6 +23,7 @@ import '../settings/ai_configured_assistant.dart';
 import '../settings/ai_settings_screen.dart';
 import '../settings/ai_settings_store.dart';
 import 'ai_chat_controller.dart';
+import 'ai_chat_notifications.dart';
 import 'ai_chat_store.dart';
 import 'ai_conversation.dart';
 
@@ -40,7 +43,8 @@ class AiChatScreen extends ConsumerStatefulWidget {
   ConsumerState<AiChatScreen> createState() => _AiChatScreenState();
 }
 
-class _AiChatScreenState extends ConsumerState<AiChatScreen> {
+class _AiChatScreenState extends ConsumerState<AiChatScreen>
+    with WidgetsBindingObserver {
   AiChatController? _chat;
   AiSettingsStore? _settings;
   AiPreferences _preferences = AiPreferences();
@@ -48,12 +52,19 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
   final _scroll = ScrollController();
   final _attachments = <AiAttachment>[];
   String? _profileId, _error;
-  bool _syncEnabled = false, _syncing = false;
+  bool _syncEnabled = false, _syncing = false, _replyNotifications = true;
+  AppLifecycleState _lifecycle = AppLifecycleState.resumed;
   Timer? _debounce;
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _init();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _lifecycle = state;
   }
 
   Future<void> _init() async {
@@ -63,6 +74,7 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
           widget.settings ??
           AiSettingsStore(preferences: await SharedPreferences.getInstance());
       final enabled = await store.syncEnabled;
+      final notifications = await store.replyNotificationsEnabled;
       if (!mounted) return;
       _settings = settings;
       _preferences = settings.load();
@@ -86,6 +98,7 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
       );
       _chat!.addListener(_changed);
       _syncEnabled = enabled;
+      _replyNotifications = notifications;
       await _chat!.refresh();
       if (mounted) setState(() {});
     } catch (_) {
@@ -115,6 +128,11 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
   AiProviderProfile? get _profile =>
       _preferences.profiles.where((p) => p.id == _profileId).firstOrNull;
   Future<void> _settingsPage() async {
+    final desktop = DesktopNavigationScope.maybeOf(context);
+    if (MediaQuery.sizeOf(context).width >= 1100 && desktop != null) {
+      desktop.onOpenRoute(RoutesStr.aiSettings);
+      return;
+    }
     await Navigator.push<void>(
       context,
       MaterialPageRoute(builder: (_) => AiSettingsScreen(store: _settings)),
@@ -198,8 +216,6 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
             ),
           );
           if (yes == true) await chat.remove();
-        case 'share':
-          await chat.update(shareWithDevices: !c!.shareWithDevices);
         case 'json':
         case 'md':
         case 'txt':
@@ -329,6 +345,48 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
         _attachments.clear();
       });
     }
+    if (accepted &&
+        mounted &&
+        _replyNotifications &&
+        _lifecycle != AppLifecycleState.resumed) {
+      final failed =
+          _chat!.active?.messages.lastOrNull?.state ==
+          AiChatMessageState.failed;
+      unawaited(AiChatNotifications.showReplyReady(failed: failed));
+    }
+  }
+
+  Future<void> _showDiagnostics(AiChatMessage message) async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        icon: const Icon(Icons.troubleshoot_rounded),
+        title: const Text('Provider response details'),
+        content: SizedBox(
+          width: 680,
+          child: SingleChildScrollView(
+            child: SelectableText(
+              message.diagnostics ??
+                  'No provider diagnostics were captured for this response.',
+              style: const TextStyle(fontFamily: 'monospace'),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton.icon(
+            onPressed: () => Clipboard.setData(
+              ClipboardData(text: message.diagnostics ?? message.error ?? ''),
+            ),
+            icon: const Icon(Icons.copy_outlined),
+            label: const Text('Copy details'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _retry(int index, {bool edit = false}) async {
@@ -475,17 +533,35 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
   Widget _message(AiChatMessage m, int index) {
     final assistant = m.message.role == AiRole.assistant;
     final last = index == _chat!.active!.messages.length - 1;
+    final scheme = Theme.of(context).colorScheme;
     return Align(
       alignment: assistant ? Alignment.centerLeft : Alignment.centerRight,
       child: Container(
         constraints: const BoxConstraints(maxWidth: 860),
         margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
           color: assistant
-              ? Theme.of(context).colorScheme.surfaceContainerLow
-              : Theme.of(context).colorScheme.primaryContainer,
-          borderRadius: BorderRadius.circular(16),
+              ? scheme.surfaceContainerLow
+              : scheme.primaryContainer,
+          border: Border.all(
+            color: assistant
+                ? scheme.outlineVariant.withValues(alpha: .55)
+                : scheme.primary.withValues(alpha: .12),
+          ),
+          borderRadius: BorderRadius.only(
+            topLeft: const Radius.circular(20),
+            topRight: const Radius.circular(20),
+            bottomLeft: Radius.circular(assistant ? 6 : 20),
+            bottomRight: Radius.circular(assistant ? 20 : 6),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: scheme.shadow.withValues(alpha: .035),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -511,6 +587,29 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
                     child: Text(_chat!.activity ?? 'Waiting for model…'),
                   ),
                 ],
+              )
+            else if (m.state == AiChatMessageState.failed)
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: scheme.errorContainer.withValues(alpha: .55),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      m.error ?? 'The provider could not complete this reply.',
+                      style: TextStyle(color: scheme.onErrorContainer),
+                    ),
+                    const SizedBox(height: 8),
+                    OutlinedButton.icon(
+                      onPressed: () => _showDiagnostics(m),
+                      icon: const Icon(Icons.description_outlined),
+                      label: const Text('View thinking and response'),
+                    ),
+                  ],
+                ),
               )
             else if (m.state == AiChatMessageState.pending)
               SelectableText(m.message.text)
@@ -571,12 +670,16 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
                       ),
               ),
             ),
-            if (m.state != AiChatMessageState.complete)
+            if (m.state != AiChatMessageState.complete &&
+                m.state != AiChatMessageState.failed)
               Text(
                 m.state.name,
                 style: TextStyle(color: Theme.of(context).colorScheme.error),
               ),
-            if (m.error != null && m.message.text != m.error) Text(m.error!),
+            if (m.error != null &&
+                m.state != AiChatMessageState.failed &&
+                m.message.text != m.error)
+              Text(m.error!),
             Wrap(
               spacing: 8,
               children: [
@@ -667,14 +770,6 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
                   value: 'folder',
                   child: Text('Move to folder'),
                 ),
-                PopupMenuItem(
-                  value: 'share',
-                  child: Text(
-                    c.shareWithDevices
-                        ? 'Stop sharing with devices'
-                        : 'Share with paired devices',
-                  ),
-                ),
                 const PopupMenuItem(
                   value: 'json',
                   child: Text('Export JSON (includes attachments)'),
@@ -694,7 +789,23 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
           : Drawer(child: SafeArea(child: _history(drawer: true))),
       body: Row(
         children: [
-          if (wide) SizedBox(width: 300, child: _history()),
+          if (wide)
+            SizedBox(
+              width: 304,
+              child: Material(
+                color: Theme.of(context).colorScheme.surfaceContainerLowest,
+                child: Container(
+                  decoration: BoxDecoration(
+                    border: Border(
+                      right: BorderSide(
+                        color: Theme.of(context).colorScheme.outlineVariant,
+                      ),
+                    ),
+                  ),
+                  child: _history(),
+                ),
+              ),
+            ),
           Expanded(
             child: Column(
               children: [
@@ -768,24 +879,62 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
                   child: c == null
                       ? Center(
                           child: SingleChildScrollView(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(
-                                  Icons.auto_awesome_outlined,
-                                  size: 48,
+                            padding: const EdgeInsets.all(24),
+                            child: Container(
+                              constraints: const BoxConstraints(maxWidth: 560),
+                              padding: const EdgeInsets.all(32),
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [
+                                    Theme.of(context)
+                                        .colorScheme
+                                        .primaryContainer
+                                        .withValues(alpha: .65),
+                                    Theme.of(context)
+                                        .colorScheme
+                                        .surfaceContainerLow,
+                                  ],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
                                 ),
-                                const SizedBox(height: 12),
-                                const Text('Start a private conversation'),
-                                const Text(
-                                  'Chat, attach documents, and switch models as you go.',
-                                ),
-                                if (_preferences.profiles.isEmpty)
-                                  FilledButton(
-                                    onPressed: _settingsPage,
-                                    child: const Text('Set up AI'),
+                                borderRadius: BorderRadius.circular(28),
+                              ),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  CircleAvatar(
+                                    radius: 32,
+                                    backgroundColor: Theme.of(context)
+                                        .colorScheme
+                                        .primary,
+                                    foregroundColor: Theme.of(context)
+                                        .colorScheme
+                                        .onPrimary,
+                                    child: const Icon(
+                                      Icons.auto_awesome_rounded,
+                                      size: 30,
+                                    ),
                                   ),
-                              ],
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    'How can DayArk help?',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .headlineSmall
+                                        ?.copyWith(fontWeight: FontWeight.w800),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  const Text(
+                                    'Start a private conversation, attach a document, or switch models at any time.',
+                                    textAlign: TextAlign.center,
+                                  ),
+                                  if (_preferences.profiles.isEmpty)
+                                    FilledButton(
+                                      onPressed: _settingsPage,
+                                      child: const Text('Set up AI'),
+                                    ),
+                                ],
+                              ),
                             ),
                           ),
                         )
@@ -821,8 +970,16 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
                   ),
                 SafeArea(
                   top: false,
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
+                  child: Container(
+                    margin: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.surfaceContainerLow,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: Theme.of(context).colorScheme.outlineVariant,
+                      ),
+                    ),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
@@ -839,7 +996,7 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
                             maxLines: compact ? 2 : 6,
                             decoration: const InputDecoration(
                               hintText: 'Message DayArk…',
-                              border: OutlineInputBorder(),
+                              border: InputBorder.none,
                             ),
                             textInputAction: TextInputAction.newline,
                           ),
@@ -858,12 +1015,18 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
                   ),
                 ),
                 if (!keyboard)
-                  Row(
+                  Wrap(
+                    alignment: WrapAlignment.center,
+                    crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
-                      Expanded(
-                        child: SwitchListTile(
+                      SizedBox(
+                        width: 330,
+                        child: SwitchListTile.adaptive(
                           dense: true,
-                          title: const Text('Chat sync (paired devices)'),
+                          title: const Text('Automatic paired-device sync'),
+                          subtitle: const Text(
+                            'Uses the existing local sync cycle',
+                          ),
                           value: _syncEnabled,
                           onChanged: chat.busy || _syncing
                               ? null
@@ -888,13 +1051,27 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
                               )
                             : const Icon(Icons.sync),
                       ),
+                      SizedBox(
+                        width: 300,
+                        child: SwitchListTile.adaptive(
+                          dense: true,
+                          title: const Text('Reply-ready notifications'),
+                          value: _replyNotifications,
+                          onChanged: (v) async {
+                            await chat.store.setReplyNotificationsEnabled(v);
+                            if (mounted) {
+                              setState(() => _replyNotifications = v);
+                            }
+                          },
+                        ),
+                      ),
                     ],
                   ),
                 if (_syncEnabled && !keyboard)
                   const Padding(
                     padding: EdgeInsets.only(bottom: 4),
                     child: Text(
-                      'Only conversations marked “Share with paired devices” sync.',
+                      'When enabled, all AI conversations sync automatically with paired devices.',
                     ),
                   ),
               ],
@@ -907,6 +1084,7 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _debounce?.cancel();
     _chat?.removeListener(_changed);
     _chat?.dispose();

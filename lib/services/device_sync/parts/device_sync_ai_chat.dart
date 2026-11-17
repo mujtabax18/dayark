@@ -15,15 +15,17 @@ extension AiChatDeviceSync on DeviceSyncService {
     return jsonDecode(utf8.decode(bytes.takeBytes())) as Map<String, dynamic>;
   }
 
-  /// Explicit user operation: both devices and every exported conversation opt in.
-  /// Reuses existing paired identities and pinned TLS, with no model credentials.
-  Future<String> syncAiChats() async {
+  /// Both devices and every exported conversation opt in. Manual sync and the
+  /// existing lightweight LAN timer share this authenticated exchange.
+  Future<String> syncAiChats() => _syncAiChats();
+
+  Future<String> _syncAiChats({bool ensureNetworking = true}) async {
     if (!_initialized || aiChatSyncState.role == SyncRole.standalone) {
       throw StateError('Pair this device through Device Sync first.');
     }
     final chats = await sharedAiChatStore();
     if (!await chats.syncEnabled) throw StateError('Chat sync is disabled.');
-    await startNetworking();
+    if (ensureNetworking) await startNetworking();
     final db = await _db;
     final peers = await db.query('sync_devices', where: 'revoked=0');
     var completed = 0;

@@ -167,6 +167,10 @@ void main() {
         .toList();
     expect(bodies.last['think'], isFalse);
     expect(events.where((e) => e.isActivity), hasLength(2));
+    expect(
+      events.where((e) => e.isActivity).map((e) => e.thinking).join(),
+      contains('synthetic-private-reasoning'),
+    );
     expect(events.map((e) => e.text).join(), 'Hello');
     expect(events.last.response!.message.text, 'Hello');
     await channel(p)

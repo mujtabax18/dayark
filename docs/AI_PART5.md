@@ -83,14 +83,15 @@ not automatically include the separate AI database; use conversation exports.
 
 ## Optional paired-device sync
 
-Enable **Chat sync (paired devices)** on both devices and mark individual
-conversations **Share with paired devices** from their menu, then press **Sync
-shared chats now**. New conversations are private by default. This does not
-use provider APIs, cloud storage or API keys. It reuses Device Sync enrollment,
+Enable **Automatic paired-device sync** on both devices. All AI conversations
+then follow the existing authenticated Local Device Sync cycle (including its
+roughly 15-second active-app checks); **Sync now** remains available for an
+immediate exchange. Before this global control is enabled conversations remain
+local. This does not use provider APIs, cloud storage or API keys. It reuses
+Device Sync enrollment,
 non-revoked device tokens (including existing rotation grace), certificate pins
 and HTTPS on TCP 39393. Older devices without the chat endpoint cannot exchange
-chats and are reported as unavailable for this operation. There is no automatic
-chat synchronization timer in this part.
+chats and are reported as unavailable for this operation.
 
 Snapshots are versioned, bounded to 32 MiB / 1000 shared conversations, and omit
 device-local profile IDs. The receiving device uses its own selected profile.
@@ -98,8 +99,26 @@ Per-replica vector clocks distinguish old snapshots from concurrent offline
 edits. Concurrent edits converge deterministically and preserve the losing
 version as a conflict copy. Concurrent deletion takes precedence; tombstones
 contain no message/attachment content and prevent stale snapshots from reviving
-a deleted conversation. Stopping sharing prevents further exchange of that
-local conversation; it does not erase copies previously shared to other devices.
+a deleted conversation. Turning chat sync off prevents further exchange; it
+does not erase copies previously synchronized to other paired devices.
+
+## Failure diagnostics and notifications
+
+A failed provider turn shows a compact error card instead of rendering partial
+provider output as a normal chat reply. **View thinking and response** opens a
+copyable dialog containing bounded model-thinking text when the provider exposes
+it, partial visible output, elapsed time, finish reason and token counts. These
+diagnostics never become conversation context and are removed from sync
+snapshots. Thinking can contain sensitive prompt-derived text, so it is shown
+only after this explicit action.
+
+**Reply-ready notifications** are enabled by default and use local OS
+notifications when a response finishes while DayArk is not visible. Notification
+text never includes prompt or response content. The switch is stored only in the
+AI chat database.
+
+On desktop, AI Chat, AI Settings, model management and their pushed detail
+screens use the workspace pane to the right of the persistent DayArk sidebar.
 
 The sync contract is in
 [ai-chat-sync.openapi.yaml](../postman/contracts/ai-chat-sync.openapi.yaml).

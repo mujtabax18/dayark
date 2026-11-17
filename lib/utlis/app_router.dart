@@ -1,4 +1,5 @@
 import '../ai/chat/ai_chat_screen.dart';
+import '../ai/settings/ai_settings_screen.dart';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -61,6 +62,10 @@ final GoRouter appRouter = GoRouter(
   ),
   routes: [
     GoRoute(path: RoutesStr.aiChat, builder: (context, state) => const AiChatScreen()),
+    GoRoute(
+      path: RoutesStr.aiSettings,
+      builder: (context, state) => const AiSettingsScreen(),
+    ),
     StatefulShellRoute.indexedStack(
       builder: (context, state, navigationShell) => MainNavigationShell(
         navigationShell: navigationShell,
@@ -344,6 +349,7 @@ final GoRouter appRouter = GoRouter(
 
 abstract final class RoutesStr {
   static const aiChat = '/ai-chat';
+  static const aiSettings = '/ai-settings';
   static const home = '/';
   static const finance = '/finance';
   static const planner = '/planner';

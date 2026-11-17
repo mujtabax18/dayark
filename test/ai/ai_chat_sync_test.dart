@@ -76,7 +76,10 @@ void main() {
       await a.mergeSync(
         Map<String, dynamic>.from(result.$2['snapshot'] as Map),
       );
-      expect((await b.list()).single.id, 'shared');
+      expect(
+        (await b.list()).map((c) => c.id),
+        containsAll(['shared', 'private']),
+      );
       expect(jsonEncode(result.$2), isNot(contains('private-local-profile')));
       revoked = true;
       expect((await send('synthetic-token')).$1, 403);

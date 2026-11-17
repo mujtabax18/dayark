@@ -1,4 +1,6 @@
 import '../../ai/chat/ai_chat_screen.dart';
+import '../../ai/settings/ai_settings_screen.dart';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -46,6 +48,6 @@ class MainNavigationShell extends ConsumerStatefulWidget {
   final StatefulNavigationShell navigationShell;
 
   @override
-  ConsumerState<MainNavigationShell> createState() => _MainNavigationShellState();
+  ConsumerState<MainNavigationShell> createState() =>
+      _MainNavigationShellState();
 }
-

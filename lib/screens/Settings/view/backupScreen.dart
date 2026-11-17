@@ -1,5 +1,3 @@
-import '../../../ai/chat/ai_chat_screen.dart';
-import '../../../ai/settings/ai_settings_screen.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -35,4 +33,3 @@ import '../controller/backup_restore_Provider.dart';
 
 part 'parts/backup_screen_setting_screen.dart';
 part 'parts/backup_screen_delete_all_database_dialog.dart';
-

@@ -98,20 +98,61 @@ void main() {
       expect((await a.get('one'))!.title, 'Updated');
     },
   );
-  test('sync requires global and per-chat consent and excludes local provider references', () async {
-    await a.save(conversation('private'));
-    await a.save(conversation('shared', share: true));
-    await expectLater(a.syncSnapshot(), throwsStateError);
-    await a.setSyncEnabled(true);
-    final snapshot = await a.syncSnapshot();
-    expect((snapshot['conversations'] as List).single['id'], 'shared');
-    expect(jsonEncode(snapshot), isNot(contains('private-local-profile')));
-    await expectLater(b.mergeSync(snapshot), throwsStateError);
-    await b.setSyncEnabled(true);
-    await b.mergeSync(snapshot);
-    expect((await b.list()).single.id, 'shared');
-    expect((await b.get('shared'))!.profileId, isNull);
-  });
+  test(
+    'global sync includes all chats and excludes device-local details',
+    () async {
+      await a.save(conversation('private'));
+      await a.save(conversation('shared', share: true));
+      await expectLater(a.syncSnapshot(), throwsStateError);
+      await a.setSyncEnabled(true);
+      final snapshot = await a.syncSnapshot();
+      expect(
+        (snapshot['conversations'] as List).map((c) => c['id']),
+        containsAll(['private', 'shared']),
+      );
+      expect(jsonEncode(snapshot), isNot(contains('private-local-profile')));
+      await expectLater(b.mergeSync(snapshot), throwsStateError);
+      await b.setSyncEnabled(true);
+      await b.mergeSync(snapshot);
+      expect(
+        (await b.list()).map((c) => c.id),
+        containsAll(['private', 'shared']),
+      );
+      expect((await b.get('shared'))!.profileId, isNull);
+    },
+  );
+
+  test(
+    'provider diagnostics remain local and are excluded from sync',
+    () async {
+      await a.setSyncEnabled(true);
+      await a.save(
+        AiConversation(
+          id: 'diagnostic',
+          title: 'Diagnostic',
+          updatedAt: DateTime.now(),
+          messages: [
+            AiChatMessage(
+              id: 'failed',
+              createdAt: DateTime.now(),
+              state: AiChatMessageState.failed,
+              error: 'Failed',
+              diagnostics: 'private model thinking',
+              message: AiMessage(role: AiRole.assistant, text: 'No response'),
+            ),
+          ],
+        ),
+      );
+      expect(
+        (await a.get('diagnostic'))!.messages.single.diagnostics,
+        isNotNull,
+      );
+      expect(
+        jsonEncode(await a.syncSnapshot()),
+        isNot(contains('private model thinking')),
+      );
+    },
+  );
   test('concurrent offline edits converge and preserve a conflict copy; tombstones prevent resurrection', () async {
     await a.setSyncEnabled(true);
     await b.setSyncEnabled(true);

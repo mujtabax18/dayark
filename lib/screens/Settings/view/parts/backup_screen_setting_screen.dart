@@ -67,9 +67,7 @@ class SettingScreen extends ConsumerWidget {
                   title: 'AI Chat',
                   subtitle: 'Conversations, attachments and model switching',
                   color: AppColors.info,
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(builder: (_) => const AiChatScreen()),
-                  ),
+                  onTap: () => openResponsiveModule(context, RoutesStr.aiChat),
                 ),
                 const SettingsDivider(),
                 SettingsTile(
@@ -77,11 +75,8 @@ class SettingScreen extends ConsumerWidget {
                   title: 'AI settings',
                   subtitle: 'Provider profiles, behavior, language and privacy',
                   color: AppColors.info,
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => const AiSettingsScreen(),
-                    ),
-                  ),
+                  onTap: () =>
+                      openResponsiveModule(context, RoutesStr.aiSettings),
                 ),
               ],
             ),

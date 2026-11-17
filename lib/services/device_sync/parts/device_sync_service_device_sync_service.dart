@@ -2033,6 +2033,18 @@ class DeviceSyncService extends StateNotifier<DeviceSyncState>
           );
         }
       }
+      // AI conversations live in their own database and therefore are not in
+      // the normal journal above. When chat sync is enabled, exchange its
+      // opted-in snapshots during the same automatic paired-device cycle.
+      try {
+        final chats = await sharedAiChatStore();
+        if (await chats.syncEnabled) {
+          await _syncAiChats(ensureNetworking: false);
+        }
+      } catch (_) {
+        // Chat sync is additive. A large/outdated chat batch must not prevent
+        // normal DayArk records from completing their durable sync pass.
+      }
       state = state.copyWith(lastSync: DateTime.now());
     } finally {
       _syncStartedAt = null;

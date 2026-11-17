@@ -38,6 +38,10 @@ void main() {
               cancellationToken.throwIfCancelled();
             }
             if (fail) {
+              yield const AiStreamEvent.activity(
+                thinking: 'Synthetic hidden reasoning',
+                diagnostic: 'Finish reason: length',
+              );
               throw const AiException(AiErrorCode.network, 'Network failed.');
             }
             yield const AiStreamEvent.delta('اردو');
@@ -74,6 +78,10 @@ void main() {
     await chat.send(user('Question'), profileId: 'online');
     expect(chat.active!.messages.last.state, AiChatMessageState.failed);
     expect(chat.active!.messages.last.message.text, 'Hello ');
+    expect(
+      chat.active!.messages.last.diagnostics,
+      allOf(contains('Synthetic hidden reasoning'), contains('Hello')),
+    );
     fail = false;
     await chat.send(user('Question'), profileId: 'online', retryUserIndex: 0);
     expect(chat.active!.messages, hasLength(2));

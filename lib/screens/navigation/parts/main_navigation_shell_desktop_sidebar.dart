@@ -123,7 +123,9 @@ class _DesktopSidebar extends StatelessWidget {
                   label: context.l10n.tr('settings'),
                   icon: Icons.settings_outlined,
                   selectedIcon: Icons.settings_rounded,
-                  selected: _routeMatches(activeRoute, RoutesStr.settings),
+                  selected:
+                      _routeMatches(activeRoute, RoutesStr.settings) ||
+                      _routeMatches(activeRoute, RoutesStr.aiSettings),
                   expanded: expanded,
                   onTap: onSettings,
                 ),
@@ -369,6 +371,7 @@ class _DesktopTopBar extends StatelessWidget {
   String _desktopPageTitle(String? route, int branchIndex) {
     return switch (route) {
       RoutesStr.aiChat => 'AI Chat',
+      RoutesStr.aiSettings => 'AI Settings',
       RoutesStr.meterList => 'Meters',
       RoutesStr.grocery => 'Grocery',
       RoutesStr.expense => 'Expenses',
@@ -448,4 +451,3 @@ class _DesktopTopBar extends StatelessWidget {
     );
   }
 }
-

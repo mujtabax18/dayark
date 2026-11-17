@@ -394,6 +394,7 @@ abstract class HttpAiProvider
       }
       String delta = '';
       var activity = false;
+      String? thinking;
       switch (protocol) {
         case AiHttpProtocol.openai:
         case AiHttpProtocol.compatible:
@@ -466,7 +467,8 @@ abstract class HttpAiProvider
               throw invalidAiResponse;
             }
             delta = message['content'] as String? ?? '';
-            activity = (message['thinking'] as String? ?? '').isNotEmpty;
+            thinking = message['thinking'] as String?;
+            activity = (thinking ?? '').isNotEmpty;
           }
           if (event['done'] == true) {
             terminal = true;
@@ -479,10 +481,21 @@ abstract class HttpAiProvider
         buffer.write(delta);
         yield AiStreamEvent.delta(delta);
       } else if (activity) {
-        yield const AiStreamEvent.activity();
+        yield AiStreamEvent.activity(thinking: thinking);
       }
     }
-    if (!terminal || buffer.toString().trim().isEmpty) throw invalidAiResponse;
+    if (terminal && buffer.toString().trim().isEmpty) {
+      yield AiStreamEvent.activity(
+        diagnostic:
+            'Terminal event: $terminal\n'
+            'Finish reason: ${finish ?? 'not provided'}\n'
+            'Input tokens: ${input ?? 'not provided'}\n'
+            'Output tokens: ${output ?? 'not provided'}',
+      );
+    }
+    if (!terminal || buffer.toString().trim().isEmpty) {
+      throw invalidAiResponse;
+    }
     yield AiStreamEvent.completed(
       AiResponse(
         selection: request.selection,

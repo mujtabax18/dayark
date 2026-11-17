@@ -199,17 +199,23 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell> {
 
     final child = switch (route) {
       RoutesStr.aiChat => const AiChatScreen(),
+      RoutesStr.aiSettings => const AiSettingsScreen(),
       RoutesStr.meterList => MeterListPage(
-          onDesktopDashboard: _openDesktopDashboard,
-        ),
-      RoutesStr.grocery => GroceryTitlesPage(onDesktopBack: _openDesktopDashboard),
-      RoutesStr.expense => ExpensesTitlesPage(onDesktopBack: _openDesktopDashboard),
+        onDesktopDashboard: _openDesktopDashboard,
+      ),
+      RoutesStr.grocery => GroceryTitlesPage(
+        onDesktopBack: _openDesktopDashboard,
+      ),
+      RoutesStr.expense => ExpensesTitlesPage(
+        onDesktopBack: _openDesktopDashboard,
+      ),
       RoutesStr.moodTracker => const PersonalDiaryScreen(),
       RoutesStr.habits => const HabitDesktopDashboard(),
       RoutesStr.quotes => const QuotationDesktopDashboard(),
       RoutesStr.invoices => const InvoiceDesktopDashboard(),
-      '${RoutesStr.invoices}/new' =>
-          const InvoiceDesktopDashboard(openCreateOnStart: true),
+      '${RoutesStr.invoices}/new' => const InvoiceDesktopDashboard(
+        openCreateOnStart: true,
+      ),
       RoutesStr.loans => const DigitalKhataDesktopDashboard(),
       RoutesStr.multimedia => const MultimediaDashboard(),
       RoutesStr.pillReminder => const PillDesktopDashboard(),
@@ -227,7 +233,15 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell> {
     };
 
     if (child == null) return null;
-    return KeyedSubtree(key: ValueKey(route), child: child);
+    // A pane-local navigator keeps settings, editors and detail pages to the
+    // right of the persistent desktop sidebar instead of covering the shell.
+    return Navigator(
+      key: ValueKey('desktop-pane:$route'),
+      onGenerateRoute: (_) => MaterialPageRoute<void>(
+        settings: RouteSettings(name: route),
+        builder: (_) => child,
+      ),
+    );
   }
 
   void _selectBranch(int index) {
@@ -317,4 +331,3 @@ class _DesktopAdminShell extends StatelessWidget {
     );
   }
 }
-

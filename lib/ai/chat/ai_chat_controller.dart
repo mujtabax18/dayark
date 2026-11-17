@@ -172,6 +172,7 @@ class AiChatController extends ChangeNotifier {
             title: 'New chat',
             updatedAt: DateTime.now().toUtc(),
             profileId: profileId,
+            shareWithDevices: await store.syncEnabled,
           );
       final previous = retryUserIndex == null
           ? c.messages
@@ -208,6 +209,9 @@ class AiChatController extends ChangeNotifier {
           .map((m) => m.message)
           .toList();
       final buffer = StringBuffer();
+      final thinking = StringBuffer();
+      final providerDiagnostics = StringBuffer();
+      final startedAt = DateTime.now();
       AiResponse? complete;
       try {
         await for (final event in engine(
@@ -219,6 +223,12 @@ class AiChatController extends ChangeNotifier {
           _token!.throwIfCancelled();
           if (event.isActivity) {
             activity = 'Model is working…';
+            if (event.thinking case final value? when value.isNotEmpty) {
+              _appendBounded(thinking, value);
+            }
+            if (event.diagnostic case final value? when value.isNotEmpty) {
+              _appendBounded(providerDiagnostics, value);
+            }
             _notify();
           }
           if (event.response != null) {
@@ -271,6 +281,15 @@ class AiChatController extends ChangeNotifier {
             ? error.message
             : 'Unable to complete response. Retry this message.';
         status = safe;
+        final details = _failureDetails(
+          error: error,
+          provider: provider,
+          model: model,
+          elapsed: DateTime.now().difference(startedAt),
+          thinking: thinking.toString(),
+          response: buffer.toString(),
+          providerDiagnostics: providerDiagnostics.toString(),
+        );
         final failed = reply.copyWith(
           state: cancelled
               ? AiChatMessageState.stopped
@@ -280,6 +299,7 @@ class AiChatController extends ChangeNotifier {
             text: buffer.isEmpty ? safe : buffer.toString(),
           ),
           error: safe,
+          diagnostics: details,
         );
         await _persist(
           active!.copyWith(
@@ -305,6 +325,43 @@ class AiChatController extends ChangeNotifier {
   }
 
   void stop() => _token?.cancel();
+
+  static void _appendBounded(StringBuffer target, String value) {
+    const limit = 64 * 1024;
+    if (target.length >= limit) return;
+    final remaining = limit - target.length;
+    target.write(value.substring(0, value.length.clamp(0, remaining)));
+  }
+
+  static String _failureDetails({
+    required Object error,
+    required String? provider,
+    required String? model,
+    required Duration elapsed,
+    required String thinking,
+    required String response,
+    required String providerDiagnostics,
+  }) {
+    final code = error is AiException ? error.code.name : error.runtimeType;
+    return <String>[
+      'Provider: ${provider ?? 'unknown'}',
+      'Model: ${model ?? 'unknown'}',
+      'Result: $code',
+      'Elapsed: ${(elapsed.inMilliseconds / 1000).toStringAsFixed(1)} seconds',
+      if (providerDiagnostics.isNotEmpty) providerDiagnostics,
+      '',
+      'MODEL THINKING',
+      thinking.trim().isEmpty
+          ? 'The provider did not expose any thinking text.'
+          : thinking.trim(),
+      '',
+      'RESPONSE RECEIVED',
+      response.trim().isEmpty
+          ? 'The provider returned no visible answer text.'
+          : response.trim(),
+    ].join('\n');
+  }
+
   @override
   void dispose() {
     _disposed = true;

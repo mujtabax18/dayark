@@ -12,6 +12,8 @@ import 'package:metersystem/ai/chat/ai_chat_screen.dart';
 import 'package:metersystem/ai/chat/ai_chat_controller.dart';
 import 'package:metersystem/ai/chat/ai_chat_store.dart';
 import 'package:metersystem/ai/chat/ai_conversation.dart';
+import 'package:metersystem/screens/navigation/widgets/desktop_navigation_scope.dart';
+import 'package:metersystem/utlis/app_router.dart';
 
 class FailingChatStore extends AiChatStore {
   FailingChatStore(super.database);
@@ -184,14 +186,10 @@ void main() {
       await tester.pump(const Duration(milliseconds: 500));
       await tester.pumpAndSettle();
       expect((await chats.list()).single.title, 'My chat');
-      await tester.tap(find.byType(PopupMenuButton<String>));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Share with paired devices'));
-      await tester.pumpAndSettle();
-      expect((await chats.list()).single.shareWithDevices, isTrue);
-      await tester.tap(find.byType(SwitchListTile));
+      await tester.tap(find.text('Automatic paired-device sync'));
       await tester.pumpAndSettle();
       expect(await chats.syncEnabled, isTrue);
+      expect((await chats.list()).single.shareWithDevices, isTrue);
       await tester.tap(find.byTooltip('Sync shared chats now'));
       await tester.pumpAndSettle();
       expect(find.text('Test sync complete.'), findsOneWidget);
@@ -297,4 +295,70 @@ void main() {
       await tester.pumpAndSettle();
     },
   );
+
+  testWidgets('failed provider output stays behind a diagnostic dialog', (
+    tester,
+  ) async {
+    await chats.save(
+      AiConversation(
+        id: 'failed-chat',
+        title: 'Failed chat',
+        updatedAt: DateTime.now(),
+        messages: [
+          AiChatMessage(
+            id: 'failed',
+            createdAt: DateTime.now(),
+            state: AiChatMessageState.failed,
+            error: 'AI provider returned an invalid or empty response.',
+            diagnostics: 'MODEL THINKING\nSynthetic reasoning\n\nRESPONSE RECEIVED\nNo answer',
+            message: AiMessage(
+              role: AiRole.assistant,
+              text: 'Partial provider output that must stay hidden',
+            ),
+          ),
+        ],
+      ),
+    );
+    await open(tester);
+    await tester.tap(find.text('Failed chat'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Partial provider output that must stay hidden'),
+      findsNothing,
+    );
+    await tester.tap(find.text('View thinking and response'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Synthetic reasoning'), findsOneWidget);
+    expect(find.textContaining('RESPONSE RECEIVED'), findsOneWidget);
+  });
+
+  testWidgets('desktop AI settings stays in the shell content pane', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    String? openedRoute;
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          home: DesktopNavigationScope(
+            onOpenRoute: (route) => openedRoute = route,
+            onDashboard: () {},
+            child: AiChatScreen(
+              store: chats,
+              settings: settings,
+              engine: getEngine(),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('AI settings'));
+    await tester.pump();
+    expect(openedRoute, RoutesStr.aiSettings);
+    expect(find.byType(AiChatScreen), findsOneWidget);
+  });
 }
