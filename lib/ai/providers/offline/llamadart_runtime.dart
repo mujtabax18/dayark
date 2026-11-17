@@ -12,9 +12,13 @@ import 'offline_runtime.dart';
 
 AiOfflineRuntime createOfflineRuntime() => LlamadartRuntime();
 
-/// CPU llama.cpp runtime, created lazily and used only with local file sources.
+/// Lazy local llama.cpp runtime with partial GPU offload and CPU fallback.
 /// Own one instance per OfflineAiProvider. No downloads or network fallback.
 class LlamadartRuntime implements AiOfflineRuntime, AiStreamingOfflineRuntime {
+  LlamadartRuntime({LlamaEngine? engine})
+    // ignore: prefer_initializing_formals
+    : _engine = engine;
+
   LlamaEngine? _engine;
   String? _path;
   int? _contextSize;
@@ -34,14 +38,32 @@ class LlamadartRuntime implements AiOfflineRuntime, AiStreamingOfflineRuntime {
     _path = null;
     _contextSize = null;
     try {
-      await engine.setModel(
-        LlamaModel(ModelSource.path(model.path)),
-        params: ModelParams(
-          contextSize: model.contextSize,
-          device: ComputeDevice.cpu,
-          gpuLayers: 0,
-        ),
-      );
+      try {
+        await engine.setModel(
+          LlamaModel(ModelSource.path(model.path)),
+          params: ModelParams(
+            contextSize: model.contextSize,
+            device: ComputeDevice.auto,
+            // Android auto otherwise selects CPU even with Vulkan bundled.
+            preferredBackend: Platform.isAndroid
+                ? GpuBackend.vulkan
+                : GpuBackend.auto,
+            // Keep most layers on CPU instead of attempting full GPU residency.
+            gpuLayers: Platform.isAndroid || Platform.isIOS ? 4 : 8,
+          ),
+        );
+      } catch (_) {
+        token.throwIfCancelled();
+        // Retry driver, backend or VRAM failures without GPU allocations.
+        await engine.setModel(
+          LlamaModel(ModelSource.path(model.path)),
+          params: ModelParams(
+            contextSize: model.contextSize,
+            device: ComputeDevice.cpu,
+            gpuLayers: 0,
+          ),
+        );
+      }
       token.throwIfCancelled();
       _path = model.path;
       _contextSize = model.contextSize;

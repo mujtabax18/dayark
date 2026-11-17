@@ -32,9 +32,38 @@ class AiSettingsStore {
   static const defaultsKey = 'dayark.ai.defaults.v1';
   AiDefaults loadDefaults() {
     final value = preferences.getString(defaultsKey);
-    return value == null
-        ? AiDefaults.builtIn()
-        : AiDefaults.fromJson(jsonDecode(value) as Map<String, dynamic>);
+    if (value == null) return AiDefaults.builtIn();
+    final json = jsonDecode(value) as Map<String, dynamic>;
+    if (json['catalogueRevision'] == null) {
+      // Upgrade the original planning-only catalogue while retaining custom
+      // entries and provider settings. Future user edits stay authoritative.
+      final builtIn = AiDefaults.builtIn().toJson()['catalogue'] as List;
+      final saved = json['catalogue'] as List;
+      final byId = {for (final entry in builtIn) entry['id']: entry};
+      const legacySources = {
+        'gemma4-e4b': '/google/gemma-4-E4B',
+        'gemma4-12b': '/google/gemma-4-12B',
+        'gemma4-26b': '/google/gemma-4-26B-A4B',
+        'gemma4-31b': '/google/gemma-4-31B',
+      };
+      for (final entry in saved) {
+        final source = Uri.tryParse(entry['source'] as String? ?? '');
+        final replacement = byId[entry['id']];
+        final original =
+            source?.host == 'huggingface.co' &&
+            legacySources[entry['id']] == source?.path;
+        byId[entry['id']] =
+            original && entry['artifact'] == null && replacement != null
+            ? {
+                ...entry,
+                'artifact': replacement['artifact'],
+                'quantization': replacement['quantization'],
+              }
+            : entry;
+      }
+      json['catalogue'] = byId.values.toList();
+    }
+    return AiDefaults.fromJson(json);
   }
 
   Future<void> saveDefaults(AiDefaults defaults) async {

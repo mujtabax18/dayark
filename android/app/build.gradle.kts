@@ -43,7 +43,7 @@ android {
 
     defaultConfig {
         // Keep package ID unchanged to preserve upgrades for existing users.
-        applicationId = "app.dayark.mobile"
+        applicationId = "app.dayark.mobile.dev"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode

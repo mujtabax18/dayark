@@ -153,6 +153,35 @@ void main() {
     },
   );
 
+  test('old planning catalogue upgrades and saved custom defaults stay intact', () async {
+    final old = AiDefaults.builtIn().toJson()..remove('catalogueRevision');
+    final entries = (old['catalogue'] as List).take(4).toList();
+    for (final entry in entries) {
+      entry['source'] =
+          'https://huggingface.co/google/${['gemma-4-E4B', 'gemma-4-12B', 'gemma-4-26B-A4B', 'gemma-4-31B'][entries.indexOf(entry)]}';
+      entry.remove('artifact');
+    }
+    final custom = Map<String, dynamic>.from(entries.first)
+      ..['id'] = 'personal-model'
+      ..['source'] = 'https://example.test/personal'
+      ..['artifact'] = (AiDefaults.builtIn().toJson()['catalogue'] as List)
+          .first['artifact'];
+    old['catalogue'] = [...entries, custom];
+    await store.preferences.setString(
+      AiSettingsStore.defaultsKey,
+      jsonEncode(old),
+    );
+    final upgraded = store.loadDefaults();
+    expect(upgraded.catalogue.models.length, greaterThan(20));
+    expect(upgraded.catalogue.models.every((m) => m.artifact != null), isTrue);
+    expect(upgraded.catalogue.models.last.id, 'personal-model');
+    expect(upgraded.catalogue.models.last.source.host, 'example.test');
+    final edited = upgraded.toJson();
+    edited['catalogue'] = (edited['catalogue'] as List).take(1).toList();
+    await store.saveDefaults(AiDefaults.fromJson(edited));
+    expect(store.loadDefaults().catalogue.models, hasLength(1));
+  });
+
   testWidgets(
     'new profile has usable defaults and separate defaults screen persists edits',
     (tester) async {
@@ -269,7 +298,8 @@ void main() {
             find.widgetWithText(FilledButton, 'Download'),
           )
           .toList();
-      expect(downloads.where((b) => b.onPressed != null), hasLength(1));
+      expect(downloads, isNotEmpty);
+      expect(downloads.every((b) => b.onPressed != null), isTrue);
       await tester.tap(find.text('Download').first);
       await tester.pumpAndSettle();
       expect(models.downloads, 0);
@@ -301,7 +331,7 @@ void main() {
   );
 
   testWidgets(
-    'download progress can be cancelled and insufficient runtime blocks downloads',
+    'download progress cancels and unsupported hardware allows downloads',
     (tester) async {
       largeView(tester);
       final models = UiModels()..downloading = Completer<void>();
@@ -338,12 +368,51 @@ void main() {
             .widgetList<FilledButton>(
               find.widgetWithText(FilledButton, 'Download'),
             )
-            .every((b) => b.onPressed == null),
+            .every((b) => b.onPressed != null),
         isTrue,
       );
-      expect(find.textContaining('unsupported on this device'), findsOneWidget);
+      expect(
+        find.textContaining('bundled runtime may not support'),
+        findsOneWidget,
+      );
     },
   );
+
+  testWidgets('mobile low-resource recommendation leaves download enabled', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final models = UiModels()
+      ..hardware = AiHardwareReport(
+        platform: 'android',
+        cpu: 'Mobile CPU',
+        logicalCores: 4,
+        availableMemoryBytes: aiGiB,
+        freeStorageBytes: aiGiB,
+        runtimeSupported: true,
+      );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AiLocalModelsScreen(
+          models: models,
+          defaults: AiDefaults.builtIn(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final download = find.widgetWithText(FilledButton, 'Download').first;
+    await tester.ensureVisible(download);
+    await tester.pumpAndSettle();
+    expect(tester.widget<FilledButton>(download).onPressed, isNotNull);
+    expect(
+      find.textContaining('Not recommended for available resources').first,
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets(
     'installed model selection returns to settings and saves offline profile',
@@ -385,7 +454,8 @@ void main() {
     );
     final models = NativeAiLocalModels(
       manager,
-      hardwareProbe: ({required storagePath}) async => deviceHardware(),
+      hardwareProbe: ({required storagePath}) async =>
+          deviceHardware(supported: false),
     );
     addTearDown(() async {
       manager.close();

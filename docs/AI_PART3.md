@@ -7,8 +7,8 @@ shared gateway. The settings and chat interfaces remain subsequent roadmap parts
 | Step | Implementation |
 | --- | --- |
 | 16 | `detectAiHardware(storagePath:)`: CPU, logical cores, physical/available memory, destination storage, available GPU/VRAM counters and runtime notes |
-| 17 | `AiModelCatalogue`: immutable Gemma 4 E4B, 12B, 26B A4B and 31B candidates; custom entries; quantization, context, languages, adapter capabilities, license/source and pinned artifact metadata |
-| 18 | `AiModelRecommender`: available RAM and storage reserves, runtime support, context-sensitive unknown status, and API/self-hosted fallback reasons |
+| 17 | `AiModelCatalogue`: 48 pinned downloads across Gemma 4/3, Qwen3, Llama 3, Phi, SmolLM2 and LFM2; custom entries; quantization, context, languages, adapter capabilities, license/source and pinned artifact metadata |
+| 18 | `AiModelRecommender`: available RAM and storage reserves, runtime support, context-sensitive unknown status, and advisory compatibility reasons |
 | 19 | `AiLocalModelManager.install`: explicit download authorization, streamed bounded writes, progress, cancellation, length/GGUF/SHA-256 checks and atomic manifest commit |
 | 20 | Persistent restore and integrity checks, explicit load/unload, install a new revision to update, and delete; all file mutations exclude native inference |
 | 21 | `benchmarkLocalModel`: model load time, generation duration, output-token throughput and process RSS before/after plus sampled peak |
@@ -61,14 +61,23 @@ production defaults have no credentials or logging. Provider credentials are not
 used for downloads. Interrupted downloads restart from zero; there is no
 background/resume service yet.
 
-The E4B Q4_0 artifact is pinned to ggml-org revision
-`1288d42c1f05addc1e3d947f29c8a5669c25182f`, 4,590,807,392 bytes, SHA-256
-`a555b900214b477d8880e7832e0b8925e139b0159640036b09fe472b6f2097f2`.
-[Publisher pointer](https://huggingface.co/ggml-org/gemma-4-E4B-it-GGUF/raw/1288d42c1f05addc1e3d947f29c8a5669c25182f/gemma-4-E4B-it-Q4_0.gguf)
-and [revision](https://huggingface.co/ggml-org/gemma-4-E4B-it-GGUF/commit/1288d42c1f05addc1e3d947f29c8a5669c25182f)
-provide its provenance. Other Gemma variants remain catalogue candidates without
-download artifacts until their metadata and native runtime compatibility are
-validated. These estimates are engineering starting points at 4096 context,
+The built-in catalogue contains 48 single-file GGUF downloads, including Q4 and
+Q8 variants where available. Each artifact is pinned to its publisher repository
+revision, LFS SHA-256 and exact length (metadata verified 2026-11-17). See
+`lib/ai/model_manager/model_catalogue_entries.dart` for URLs and provenance.
+Vision projectors, draft models and LiteRT-LM files are excluded because the
+current installation and inference adapter handles text GGUF models.
+
+Settings → AI settings → Local model manager lists all catalogue entries on
+both desktop and mobile. Resource and runtime recommendations are advisory:
+low RAM, low storage and a negative compatibility estimate do not disable
+Download, Load or Benchmark. Size, checksum and GGUF verification still apply.
+Installed models have Use model, Load, Unload, Benchmark and Delete controls;
+Delete asks for confirmation and releases the engine before removing files.
+The original planning-only saved catalogue upgrades while preserving custom
+entries and provider settings. Subsequent saved catalogue edits are respected.
+
+Estimates apply at 4096 context tokens and are engineering starting points,
 not measured model requirements. Adapter vision/tool support remains false.
 
 ## Storage and lifecycle
@@ -98,11 +107,18 @@ Android adds ActivityManager/StatFs counters through `dayark/ai_hardware`. iOS
 uses physical memory, available allocation budget, filesystem space and Metal
 device name through the same channel. iOS allocation budget is not equivalent to
 system-wide free RAM. GPU VRAM remains unknown for shared-memory GPUs and where
-reliable counters are unavailable. GPU detection does not enable acceleration;
-the existing pinned runtime stays CPU-only. A missing mobile plugin leaves
+reliable counters are unavailable. Native hooks bundle CPU/Vulkan on Android,
+Linux and Windows, plus CUDA on x64 desktops. Apple uses the runtime's combined
+CPU/Metal build. Model loading requests 8 GPU layers on desktop and 4 on mobile;
+Android explicitly prefers Vulkan. Failed accelerated loads retry once on CPU
+with the same context size; cancellation prevents that retry. Driver/backend
+availability can also cause the runtime to resolve a load to CPU directly.
+A missing mobile plugin leaves
 measurements unknown. Web reports local GGUF inference unsupported.
 
-Known x86 AVX2 absence blocks recommendations for this runtime. Unknown runtime
+Known x86 AVX2 absence produces a negative recommendation for this runtime; it
+does not block downloads or load attempts. A compatible custom native build may
+still be required on older CPUs. Unknown runtime
 compatibility or memory/storage yields an unknown fit; confirmed measured counters
 plus a compatible runtime can yield a candidate. Different context sizes require
 new measurements rather than an invented KV-cache estimate. RAM reserves default
@@ -140,8 +156,15 @@ On this Linux host the manual inspection correctly reports an NVIDIA GPU with
 unknown VRAM and an Intel Xeon E5-1650 without AVX2. The current native backend
 cannot benchmark inference here. Android/iOS channel implementations and Windows/
 macOS probes require device/platform build validation; a mocked channel test does
-not establish native packaging compatibility. No GPU backend was enabled.
+not establish native packaging compatibility. GPU modules are now enabled in configuration; real GPU inference on these
+devices remains unverified.
 
 Validation on 2026-11-16: all 66 Flutter tests passed, scoped static analysis
 reported no issues, `git diff --check` passed, and the local hardware inspection
 command completed successfully. No new package dependencies were required.
+
+Update 2026-11-17: added advisory download controls, expanded verified downloads,
+catalogue migration and partial GPU loading with CPU fallback. Regression tests
+exercise GPU load success, CPU fallback, cancellation, failed loads, negative
+hardware estimates, download consent and installed-model deletion using fakes.
+These tests do not establish device-specific GPU or model compatibility.

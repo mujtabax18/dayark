@@ -39,7 +39,7 @@ Future<AiHardwareReport> detect(String path) async {
   String? gpu;
   bool? supported;
   final notes = <String>[
-    'Recommendations use CPU RAM; GPU offload is not enabled.',
+    'Partial GPU offload is attempted when a compatible backend is available, with CPU fallback.',
   ];
   if (Platform.isLinux || Platform.isAndroid) {
     final values = await Future.wait([

@@ -84,7 +84,7 @@ void main() {
     final catalogue = AiModelCatalogue.candidates();
     const engine = AiModelRecommender();
     final fits = engine.recommend(hardware(), catalogue);
-    expect(fits.map((r) => r.fit), [
+    expect(fits.take(4).map((r) => r.fit), [
       AiModelFit.candidate,
       AiModelFit.candidate,
       AiModelFit.insufficient,
@@ -112,6 +112,16 @@ void main() {
       engine.recommend(hardware(), catalogue, contextSize: 8192).first.fit,
       AiModelFit.unknown,
     );
+    expect(catalogue.models.length, greaterThan(20));
+    expect(catalogue.models.every((m) => m.artifact != null), isTrue);
+    expect(
+      catalogue.models.every(
+        (m) => m.artifact!.redirectHosts.contains('us.aws.cdn.hf.co'),
+      ),
+      isTrue,
+    );
+    expect(catalogue.models.any((m) => m.id == 'gemma4-e2b'), isTrue);
+    expect(catalogue.models.any((m) => m.name.contains('Qwen3')), isTrue);
     expect(() => catalogue.models.clear(), throwsUnsupportedError);
     expect(
       () => AiModelArtifact(
@@ -328,7 +338,14 @@ void main() {
       );
       await expectLater(
         store.install(
-          AiModelCatalogue.candidates().models.last,
+          AiCatalogueModel(
+            id: 'unverified',
+            name: 'Unverified',
+            license: 'test',
+            source: Uri.parse('https://example.test/model'),
+            estimatedRamBytes: aiGiB,
+            estimatedDiskBytes: aiGiB,
+          ),
           allowDownload: true,
         ),
         throwsArgumentError,

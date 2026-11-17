@@ -10,7 +10,7 @@ See `docs/AI_PART4.md` for saved profiles, secure credentials and privacy integr
 | Roadmap step | Implementation |
 | --- | --- |
 | 1–6 | Immutable shared messages/settings/attachments, provider interface, gateway, prompt composition, standard errors, bounded retries, timeouts and cancellation |
-| 7 | `OfflineAiProvider`: embedded CPU llama.cpp via pinned `llamadart`, explicitly configured local GGUF files, lazy loading, safe exclusive engine ownership and disposal |
+| 7 | `OfflineAiProvider`: embedded llama.cpp with partial GPU offload and CPU fallback via pinned `llamadart`, explicitly configured local GGUF files, lazy loading, safe exclusive engine ownership and disposal |
 | 8 | `OpenAiProvider`: official Chat Completions API, bearer credentials, modern output-token limit and response usage |
 | 9 | `GeminiProvider`: GenerateContent, API-key header, separate system instructions and model-role history |
 | 10 | `AnthropicProvider`: Messages API, API-key/version headers, required output limit and merged adjacent turns |
@@ -23,8 +23,10 @@ See `docs/AI_PART4.md` for saved profiles, secure credentials and privacy integr
 Part 1's `AiProvider` contract remains source-compatible. The optional
 `AiManagedProvider` interface adds discovery and connection checks. HTTP adapters
 use existing Dio; only `llamadart` and its `dinja` dependency were added to the
-lockfile. Existing locked package versions were retained. CPU-only native hook
-configuration avoids enabling untested GPU backends or unrelated runtimes.
+lockfile. Existing locked package versions were retained. Native hooks bundle CPU and Vulkan,
+plus CUDA on x64 desktop targets. Loading attempts 8 GPU layers on desktop and
+4 on mobile, then retries on CPU if loading fails. Actual acceleration depends
+on compatible native libraries and device drivers.
 
 ## Usage
 

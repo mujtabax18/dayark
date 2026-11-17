@@ -118,7 +118,7 @@ class _AiLocalModelsScreenState extends State<AiLocalModelsScreen> {
                           ),
                           if (!models.supported)
                             const Text(
-                              'Local inference is unsupported on this device. Choose an online or self-hosted provider.',
+                              'The bundled runtime may not support this device. You can still download and try any model; a compatible native runtime may be needed.',
                             ),
                           if (h != null) ...h.notes.map((note) => Text(note)),
                         ],
@@ -161,7 +161,7 @@ class _AiLocalModelsScreenState extends State<AiLocalModelsScreen> {
                                   child: const Text('Use model'),
                                 ),
                                 OutlinedButton(
-                                  onPressed: models.busy || !models.supported
+                                  onPressed: models.busy
                                       ? null
                                       : () => models.load(m.id),
                                   child: const Text('Load'),
@@ -174,7 +174,7 @@ class _AiLocalModelsScreenState extends State<AiLocalModelsScreen> {
                                     child: const Text('Unload'),
                                   ),
                                 OutlinedButton(
-                                  onPressed: models.busy || !models.supported
+                                  onPressed: models.busy
                                       ? null
                                       : () => models.measure(m.id),
                                   child: const Text('Benchmark'),
@@ -213,7 +213,7 @@ class _AiLocalModelsScreenState extends State<AiLocalModelsScreen> {
                     style: Theme.of(context).textTheme.titleLarge,
                   ),
                   const Text(
-                    'Estimates include a RAM/storage reserve. A candidate still needs a successful load test. Larger entries without verified artifacts cannot be downloaded.',
+                    'All available GGUF models are listed below. Recommendations are advisory: you can download and try any model on desktop or mobile. Larger models may exhaust memory or run slowly. GPU offload is attempted with CPU fallback.',
                   ),
                   ...widget.defaults.catalogue.models.map((m) {
                     final fit = recommendations
@@ -227,11 +227,7 @@ class _AiLocalModelsScreenState extends State<AiLocalModelsScreen> {
                         installed.sha256 == m.artifact?.sha256.toLowerCase() &&
                         installed.revision == m.artifact?.revision;
                     final enabled =
-                        !models.busy &&
-                        models.supported &&
-                        m.artifact != null &&
-                        !current &&
-                        fit?.fit != AiModelFit.insufficient;
+                        !models.busy && m.artifact != null && !current;
                     return Card(
                       child: Padding(
                         padding: const EdgeInsets.all(16),
@@ -253,10 +249,10 @@ class _AiLocalModelsScreenState extends State<AiLocalModelsScreen> {
                                   : current
                                   ? 'Installed — up to date'
                                   : fit?.fit == AiModelFit.candidate
-                                  ? 'Hardware fit: candidate'
+                                  ? 'Recommended for available resources'
                                   : fit?.fit == AiModelFit.insufficient
-                                  ? 'Hardware fit: insufficient'
-                                  : 'Hardware fit: unknown',
+                                  ? 'Not recommended for available resources — you can still try it'
+                                  : 'Compatibility untested — you can still try it',
                             ),
                             if (fit != null)
                               ...fit.reasons.map((reason) => Text(reason)),

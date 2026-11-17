@@ -118,6 +118,7 @@ class AiDefaults {
   Map<String, dynamic> toJson() => {
     'version': 1,
     'providers': providers.map((p) => p.toJson()).toList(),
+    'catalogueRevision': 2,
     'catalogue': catalogue.models.map(catalogueModelToJson).toList(),
   };
   factory AiDefaults.fromJson(Map<String, dynamic> j) {

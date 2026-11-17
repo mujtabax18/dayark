@@ -124,9 +124,15 @@ flutter:
     - assets/images/
     - assets/family_tree/relationship_universe.html
 
-# Keep the local runtime CPU-only; Part 3 reports GPUs without enabling unvalidated backends.
+# Bundle GPU modules alongside the CPU fallback for partial model offload.
 hooks:
   user_defines:
     llamadart:
       llamadart_native_runtimes: [llama_cpp]
-      llamadart_native_backends: [cpu]
+      llamadart_native_backends:
+        platforms:
+          android: [cpu, vulkan]
+          linux-x64: [cpu, vulkan, cuda]
+          linux-arm64: [cpu, vulkan]
+          windows-x64: [cpu, vulkan, cuda]
+          windows-arm64: [cpu, vulkan]

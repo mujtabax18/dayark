@@ -96,12 +96,6 @@ class NativeAiLocalModels extends AiLocalModels {
   });
   @override
   Future<void> install(AiCatalogueModel model) => _run((token) async {
-    if (!supported) {
-      throw const AiException(
-        AiErrorCode.unsupportedCapability,
-        'This runtime is unsupported on this device.',
-      );
-    }
     loadedId = null;
     final updates = Stopwatch()..start();
     var lastNotification = -100;

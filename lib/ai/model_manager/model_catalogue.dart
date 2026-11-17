@@ -1,5 +1,7 @@
 import '../hardware/ai_hardware.dart';
 
+part 'model_catalogue_entries.dart';
+
 const aiGiB = 1024 * 1024 * 1024;
 
 /// An immutable, pinned artifact. Hash and byte length come from a trusted
@@ -74,35 +76,9 @@ class AiModelCatalogue {
   }
   final List<AiCatalogueModel> models;
 
-  /// Planning candidates, not validated runtime promises. E4B has a pinned
-  /// publisher artifact; other entries require verified download metadata.
-  factory AiModelCatalogue.candidates() => AiModelCatalogue([
-    for (final spec in [
-      ('gemma4-e4b', 'Gemma 4 E4B', 8, 6, 'gemma-4-E4B'),
-      ('gemma4-12b', 'Gemma 4 12B', 12, 9, 'gemma-4-12B'),
-      ('gemma4-26b', 'Gemma 4 26B A4B', 24, 18, 'gemma-4-26B-A4B'),
-      ('gemma4-31b', 'Gemma 4 31B', 28, 22, 'gemma-4-31B'),
-    ])
-      AiCatalogueModel(
-        id: spec.$1,
-        name: spec.$2,
-        license: 'Apache-2.0; review publisher license before download',
-        source: Uri.https('huggingface.co', '/google/${spec.$5}'),
-        estimatedRamBytes: spec.$3 * aiGiB,
-        estimatedDiskBytes: spec.$4 * aiGiB,
-        artifact: spec.$1 == 'gemma4-e4b'
-            ? AiModelArtifact(
-                url: Uri.parse(
-                  'https://huggingface.co/ggml-org/gemma-4-E4B-it-GGUF/resolve/1288d42c1f05addc1e3d947f29c8a5669c25182f/gemma-4-E4B-it-Q4_0.gguf',
-                ),
-                sha256: 'a555b900214b477d8880e7832e0b8925e139b0159640036b09fe472b6f2097f2',
-                bytes: 4590807392,
-                revision: '1288d42c1f05addc1e3d947f29c8a5669c25182f',
-                redirectHosts: ['huggingface.co', 'cas-bridge.xethub.hf.co'],
-              )
-            : null,
-      ),
-  ]);
+  /// Pinned, single-file GGUF text models supported by the embedded adapter.
+  /// Hardware suitability is advisory; actual loading verifies compatibility.
+  factory AiModelCatalogue.candidates() => AiModelCatalogue(_downloadModels());
 }
 
 enum AiModelFit { candidate, insufficient, unknown }
@@ -164,10 +140,12 @@ class AiModelRecommender {
           reasons.add('Insufficient free storage including reserve.');
         }
         reasons.add(
-          'CPU-only ${model.quantization}; estimates require measured validation.',
+          '${model.quantization}; RAM estimates do not assume GPU savings.',
         );
         if (insufficient) {
-          reasons.add('Use an online API or self-hosted endpoint.');
+          reasons.add(
+            'You can still download and try this model. It may run slowly or fail to load.',
+          );
         }
         return AiModelRecommendation(
           model,
