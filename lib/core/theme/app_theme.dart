@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'app_Dark_Neutral_Colors.dart';
+import 'app_dark_style.dart';
 import 'app_Light_Neutral_Colors.dart';
 import 'app_neutral_colors.dart';
 import 'app_theme_composer.dart';
@@ -9,19 +10,30 @@ import 'app_theme_typography.dart';
 import 'app_theme_preset.dart';
 
 abstract final class AppTheme {
+  static final _lightCache = <AppThemePreset, ThemeData>{};
+  static final _darkCache = <(AppThemePreset, AppDarkStyle), ThemeData>{};
+
   static ThemeData light([AppThemePreset preset = AppThemePreset.indigo]) =>
-      _build(
-        brightness: Brightness.light,
-        neutral: LightNeutralColors(),
-        preset: preset,
+      _lightCache.putIfAbsent(
+        preset,
+        () => _build(
+          brightness: Brightness.light,
+          neutral: LightNeutralColors(),
+          preset: preset,
+        ),
       );
 
-  static ThemeData dark([AppThemePreset preset = AppThemePreset.indigo]) =>
-      _build(
-        brightness: Brightness.dark,
-        neutral: DarkNeutralColors(),
-        preset: preset,
-      );
+  static ThemeData dark([
+    AppThemePreset preset = AppThemePreset.indigo,
+    AppDarkStyle style = AppDarkStyle.dim,
+  ]) => _darkCache.putIfAbsent(
+    (preset, style),
+    () => _build(
+      brightness: Brightness.dark,
+      neutral: DarkNeutralColors(pureBlack: style == AppDarkStyle.black),
+      preset: preset,
+    ),
+  );
 
   static ThemeData _build({
     required Brightness brightness,

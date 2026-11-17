@@ -6,6 +6,9 @@ enum AppThemePreset {
   ocean,
   sunset,
   rose,
+  violet,
+  amber,
+  graphite,
 }
 
 extension AppThemePresetX on AppThemePreset {
@@ -23,6 +26,12 @@ extension AppThemePresetX on AppThemePreset {
         return 'Sunset';
       case AppThemePreset.rose:
         return 'Rose';
+      case AppThemePreset.violet:
+        return 'Violet';
+      case AppThemePreset.amber:
+        return 'Amber';
+      case AppThemePreset.graphite:
+        return 'Graphite';
     }
   }
 
@@ -38,6 +47,12 @@ extension AppThemePresetX on AppThemePreset {
         return const Color(0xFFEA580C);
       case AppThemePreset.rose:
         return const Color(0xFFE11D48);
+      case AppThemePreset.violet:
+        return const Color(0xFF7C3AED);
+      case AppThemePreset.amber:
+        return const Color(0xFFB45309);
+      case AppThemePreset.graphite:
+        return const Color(0xFF475569);
     }
   }
 
@@ -53,6 +68,12 @@ extension AppThemePresetX on AppThemePreset {
         return const Color(0xFFD97706);
       case AppThemePreset.rose:
         return const Color(0xFFDB2777);
+      case AppThemePreset.violet:
+        return const Color(0xFFC026D3);
+      case AppThemePreset.amber:
+        return const Color(0xFFCA8A04);
+      case AppThemePreset.graphite:
+        return const Color(0xFF64748B);
     }
   }
 

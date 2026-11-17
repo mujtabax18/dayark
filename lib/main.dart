@@ -13,6 +13,8 @@ import 'controller/theme_notifier.dart';
 import 'controller/theme_preset_notifier.dart';
 import 'core/design/app_scroll_behavior.dart';
 import 'core/theme/app_theme.dart';
+import 'core/theme/app_dark_style.dart';
+import 'controller/dark_style_notifier.dart';
 import 'core/theme/app_theme_preset.dart';
 import 'localization/app_localizations.dart';
 import 'models/currency_setting.dart';
@@ -45,6 +47,7 @@ Future<void> main() async {
   final settingsController = UserSettingsController(repository);
   final initialTheme = await settingsController.getThemeMode();
   final initialThemePreset = await settingsController.getThemePreset();
+  final initialDarkStyle = await settingsController.getDarkStyle();
   final initialLanguage = await settingsController.getLanguage();
   final initialCurrency = await settingsController.getCurrencySetting();
 
@@ -54,20 +57,23 @@ Future<void> main() async {
       settingsController: settingsController,
       initialTheme: initialTheme,
       initialThemePreset: initialThemePreset,
+      initialDarkStyle: initialDarkStyle,
       initialLanguage: initialLanguage,
       initialCurrency: initialCurrency,
     ),
   );
 
   // Debug must not offer to install a GitHub Release over the development app.
-  if (!kDebugMode) WidgetsBinding.instance.addPostFrameCallback((_) async {
-    // Give GoRouter's root navigator one frame to attach before showing UI.
-    await Future<void>.delayed(const Duration(milliseconds: 700));
-    final context = rootNavigatorKey.currentContext;
-    if (context != null && context.mounted) {
-      await AppUpdateCoordinator.checkAndPrompt(context);
-    }
-  });
+  if (!kDebugMode) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      // Give GoRouter's root navigator one frame to attach before showing UI.
+      await Future<void>.delayed(const Duration(milliseconds: 700));
+      final context = rootNavigatorKey.currentContext;
+      if (context != null && context.mounted) {
+        await AppUpdateCoordinator.checkAndPrompt(context);
+      }
+    });
+  }
 }
 
 class MeterReadingRoot extends StatefulWidget {
@@ -77,6 +83,7 @@ class MeterReadingRoot extends StatefulWidget {
     required this.settingsController,
     required this.initialTheme,
     required this.initialThemePreset,
+    this.initialDarkStyle = AppDarkStyle.dim,
     required this.initialLanguage,
     required this.initialCurrency,
   });
@@ -85,6 +92,7 @@ class MeterReadingRoot extends StatefulWidget {
   final UserSettingsController settingsController;
   final ThemeMode initialTheme;
   final AppThemePreset initialThemePreset;
+  final AppDarkStyle initialDarkStyle;
   final String initialLanguage;
   final CurrencySetting initialCurrency;
 
@@ -95,6 +103,7 @@ class MeterReadingRoot extends StatefulWidget {
 class _MeterReadingRootState extends State<MeterReadingRoot> {
   late ThemeMode _theme;
   late AppThemePreset _themePreset;
+  late AppDarkStyle _darkStyle;
   late String _language;
   late CurrencySetting _currency;
   int _scopeRevision = 0;
@@ -105,15 +114,19 @@ class _MeterReadingRootState extends State<MeterReadingRoot> {
     super.initState();
     _theme = widget.initialTheme;
     _themePreset = widget.initialThemePreset;
+    _darkStyle = widget.initialDarkStyle;
     _language = widget.initialLanguage;
     _currency = widget.initialCurrency;
-    AppDataResetSignal.instance.revision.addListener(_reloadAfterDatabaseChange);
+    AppDataResetSignal.instance.revision.addListener(
+      _reloadAfterDatabaseChange,
+    );
   }
 
   @override
   void dispose() {
-    AppDataResetSignal.instance.revision
-        .removeListener(_reloadAfterDatabaseChange);
+    AppDataResetSignal.instance.revision.removeListener(
+      _reloadAfterDatabaseChange,
+    );
     super.dispose();
   }
 
@@ -127,6 +140,7 @@ class _MeterReadingRootState extends State<MeterReadingRoot> {
         widget.settingsController.getThemePreset(),
         widget.settingsController.getLanguage(),
         widget.settingsController.getCurrencySetting(),
+        widget.settingsController.getDarkStyle(),
       ]);
       if (!mounted) return;
       setState(() {
@@ -134,6 +148,7 @@ class _MeterReadingRootState extends State<MeterReadingRoot> {
         _themePreset = values[1] as AppThemePreset;
         _language = values[2] as String;
         _currency = values[3] as CurrencySetting;
+        _darkStyle = values[4] as AppDarkStyle;
         _scopeRevision++;
         _resetting = false;
       });
@@ -160,11 +175,11 @@ class _MeterReadingRootState extends State<MeterReadingRoot> {
         themePresetProvider.overrideWith((ref) {
           return ThemePresetNotifier(widget.settingsController, _themePreset);
         }),
+        darkStyleProvider.overrideWith((ref) {
+          return DarkStyleNotifier(widget.settingsController, _darkStyle);
+        }),
         localeProvider.overrideWith((ref) {
-          return LocaleNotifier(
-            widget.settingsController,
-            Locale(_language),
-          );
+          return LocaleNotifier(widget.settingsController, Locale(_language));
         }),
         currencyProvider.overrideWith((ref) {
           return CurrencyNotifier(widget.settingsController, _currency);
@@ -202,6 +217,7 @@ class MeterReadingApp extends ConsumerWidget {
 
     final themeMode = ref.watch(themeProvider);
     final themePreset = ref.watch(themePresetProvider);
+    final darkStyle = ref.watch(darkStyleProvider);
     final locale = ref.watch(localeProvider);
 
     return MaterialApp.router(
@@ -210,7 +226,7 @@ class MeterReadingApp extends ConsumerWidget {
       routerConfig: appRouter,
       onGenerateTitle: (context) => context.l10n.tr('appName'),
       theme: AppTheme.light(themePreset),
-      darkTheme: AppTheme.dark(themePreset),
+      darkTheme: AppTheme.dark(themePreset, darkStyle),
       themeMode: themeMode,
       locale: locale,
       supportedLocales: AppLocalizations.supportedLocales,
@@ -220,7 +236,10 @@ class MeterReadingApp extends ConsumerWidget {
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      themeAnimationDuration: const Duration(milliseconds: 260),
+      themeAnimationDuration:
+          (MediaQuery.maybeOf(context)?.disableAnimations ?? false)
+          ? Duration.zero
+          : const Duration(milliseconds: 220),
       themeAnimationCurve: Curves.easeOutCubic,
       scrollBehavior: const AppScrollBehavior(),
     );

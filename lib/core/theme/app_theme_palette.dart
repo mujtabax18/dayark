@@ -20,6 +20,10 @@ class AppThemePalette {
 
   bool get isDark => brightness == Brightness.dark;
 
+  // Pick the foreground with the higher WCAG contrast for custom light accents.
+  static Color _onColor(Color color) =>
+      color.computeLuminance() > .179 ? Colors.black : Colors.white;
+
   factory AppThemePalette.create({
     required Brightness brightness,
     required AppNeutralColors neutral,
@@ -45,8 +49,10 @@ class AppThemePalette {
     );
 
     final scheme = seeded.copyWith(
-      primary: preset.primary,
-      secondary: preset.secondary,
+      primary: isDark ? seeded.primary : preset.primary,
+      onPrimary: isDark ? seeded.onPrimary : _onColor(preset.primary),
+      secondary: isDark ? seeded.secondary : preset.secondary,
+      onSecondary: isDark ? seeded.onSecondary : _onColor(preset.secondary),
       surface: neutral.card,
       onSurface: neutral.textPrimary,
       onSurfaceVariant: neutral.textSecondary,
@@ -57,7 +63,8 @@ class AppThemePalette {
       surfaceContainer: surfaceContainer,
       surfaceContainerHigh: surfaceContainerHigh,
       surfaceContainerHighest: surfaceContainerHighest,
-      error: AppColors.danger,
+      error: isDark ? const Color(0xFFFFB4AB) : AppColors.danger,
+      onError: isDark ? const Color(0xFF690005) : _onColor(AppColors.danger),
     );
 
     return AppThemePalette(

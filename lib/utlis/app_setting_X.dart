@@ -7,6 +7,8 @@ extension AppSettingKeyX on AppSettingKey {
         return 'theme';
       case AppSettingKey.themePreset:
         return 'theme_preset';
+      case AppSettingKey.darkStyle:
+        return 'dark_style';
       case AppSettingKey.language:
         return 'language';
       case AppSettingKey.notifications:

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../design/app_tokens.dart';
-import 'app_colors.dart';
 import 'app_theme_palette.dart';
 
 InputDecorationThemeData buildAppInputTheme(AppThemePalette palette) {
@@ -26,8 +25,8 @@ InputDecorationThemeData buildAppInputTheme(AppThemePalette palette) {
     prefixIconColor: neutral.textSecondary,
     suffixIconColor: neutral.textSecondary,
     labelStyle: TextStyle(color: neutral.textSecondary),
-    floatingLabelStyle: const TextStyle(
-      color: AppColors.primary,
+    floatingLabelStyle: TextStyle(
+      color: scheme.primary,
       fontWeight: FontWeight.w700,
     ),
     hintStyle: TextStyle(color: neutral.textDisabled),
@@ -190,10 +189,7 @@ FloatingActionButtonThemeData buildAppFabTheme(AppThemePalette palette) {
   );
 }
 
-ChipThemeData buildAppChipTheme(
-  AppThemePalette palette,
-  TextTheme textTheme,
-) {
+ChipThemeData buildAppChipTheme(AppThemePalette palette, TextTheme textTheme) {
   final scheme = palette.scheme;
   final neutral = palette.neutral;
   return ChipThemeData(

@@ -1,15 +1,25 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../design/app_tokens.dart';
 import 'app_theme_palette.dart';
 
-AppBarThemeData buildAppBarTheme(
-  AppThemePalette palette,
-  TextTheme textTheme,
-) {
+AppBarThemeData buildAppBarTheme(AppThemePalette palette, TextTheme textTheme) {
   return AppBarThemeData(
     elevation: 0,
     scrolledUnderElevation: 0,
+    systemOverlayStyle: SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: palette.isDark
+          ? Brightness.light
+          : Brightness.dark,
+      statusBarBrightness: palette.brightness,
+      systemNavigationBarColor: palette.neutral.background,
+      systemNavigationBarIconBrightness: palette.isDark
+          ? Brightness.light
+          : Brightness.dark,
+      systemNavigationBarDividerColor: Colors.transparent,
+    ),
     centerTitle: false,
     backgroundColor: palette.neutral.background,
     foregroundColor: palette.neutral.textPrimary,
@@ -112,9 +122,7 @@ ListTileThemeData buildAppListTileTheme(
   return ListTileThemeData(
     iconColor: palette.neutral.textSecondary,
     textColor: palette.neutral.textPrimary,
-    titleTextStyle: textTheme.bodyLarge?.copyWith(
-      fontWeight: FontWeight.w700,
-    ),
+    titleTextStyle: textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w700),
     subtitleTextStyle: textTheme.bodySmall,
     contentPadding: const EdgeInsets.symmetric(
       horizontal: AppSpacing.md,

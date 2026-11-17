@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../core/theme/app_theme_preset.dart';
+import '../core/theme/app_dark_style.dart';
 import '../models/HomeLayoutSettings.dart';
 import '../models/currency_setting.dart';
 import '../services/localDatabaseServices/UserSettingsRepository.dart';
@@ -41,6 +42,16 @@ class UserSettingsController {
 
   Future<void> setThemePreset(AppThemePreset preset) async {
     await repo.setValue(AppSettingKey.themePreset, preset.storageValue);
+  }
+
+  Future<AppDarkStyle> getDarkStyle() async {
+    return AppDarkStyle.fromStorage(
+      await repo.getValue(AppSettingKey.darkStyle),
+    );
+  }
+
+  Future<void> setDarkStyle(AppDarkStyle style) async {
+    await repo.setValue(AppSettingKey.darkStyle, style.name);
   }
 
   Future<String> getLanguage() async {
@@ -125,10 +136,7 @@ class UserSettingsController {
 
   Future<void> setHomeSummaryOrder(List<int> order) async {
     final normalized = HomeLayoutSettings.normalizeSummaryOrder(order);
-    await repo.setValue(
-      AppSettingKey.homeSummaryOrder,
-      normalized.join(','),
-    );
+    await repo.setValue(AppSettingKey.homeSummaryOrder, normalized.join(','));
   }
 
   Future<Set<int>> getHomeVisibleSummaries() async {

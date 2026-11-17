@@ -1,16 +1,11 @@
-enum AppMode {
-  offline,
-  online,
-}
+enum AppMode { offline, online }
 
-enum AuthMode {
-  login,
-  register,
-}
+enum AuthMode { login, register }
 
 enum AppSettingKey {
   theme,
   themePreset,
+  darkStyle,
   language,
   notifications,
   tutorialSeen,

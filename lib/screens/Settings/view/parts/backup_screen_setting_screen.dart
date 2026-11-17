@@ -10,6 +10,7 @@ class SettingScreen extends ConsumerWidget {
     final backupStatus = ref.watch(backupRestoreProvider);
     final themeMode = ref.watch(themeProvider);
     final themePreset = ref.watch(themePresetProvider);
+    final darkStyle = ref.watch(darkStyleProvider);
     final locale = ref.watch(localeProvider);
     final currency = ref.watch(currencyProvider);
     final homeLayout = ref.watch(homeLayoutProvider);
@@ -93,7 +94,7 @@ class SettingScreen extends ConsumerWidget {
                   title: context.l10n.tr('themeMode'),
                   subtitle: _themeModeLabel(context, themeMode),
                   color: AppColors.task,
-                  onTap: () => _showThemeModeSheet(context, ref, themeMode),
+                  onTap: () => showAppearanceSheet(context),
                 ),
                 const SettingsDivider(),
                 SettingsTile(
@@ -106,7 +107,16 @@ class SettingScreen extends ConsumerWidget {
                     backgroundColor: themePreset.primary,
                   ),
                   onTap: () =>
-                      _showThemePresetSheet(context, ref, themePreset),
+                      showAppearanceSheet(context),
+                ),
+                const SettingsDivider(),
+                SettingsTile(
+                  icon: Icons.contrast_rounded,
+                  title: context.l10n.tr('darkSurfaces'),
+                  color: context.colorScheme.primary,
+                  subtitle: context.l10n.tr(darkStyle == AppDarkStyle.black
+                      ? 'pureBlack' : 'dimDark'),
+                  onTap: () => showAppearanceSheet(context),
                 ),
                 const SettingsDivider(),
                 SettingsTile(
@@ -485,26 +495,7 @@ class SettingScreen extends ConsumerWidget {
     BuildContext context,
     AppThemePreset preset,
   ) {
-    final language = Localizations.localeOf(context).languageCode;
-    if (language == 'ur') {
-      return switch (preset) {
-        AppThemePreset.indigo => 'انڈیگو',
-        AppThemePreset.emerald => 'زمرد',
-        AppThemePreset.ocean => 'سمندر',
-        AppThemePreset.sunset => 'غروب آفتاب',
-        AppThemePreset.rose => 'گلابی',
-      };
-    }
-    if (language == 'ar') {
-      return switch (preset) {
-        AppThemePreset.indigo => 'نيلي',
-        AppThemePreset.emerald => 'زمردي',
-        AppThemePreset.ocean => 'محيط',
-        AppThemePreset.sunset => 'غروب',
-        AppThemePreset.rose => 'وردي',
-      };
-    }
-    return preset.label;
+    return context.l10n.tr('palette_${preset.name}');
   }
 
   String _languageLabel(String languageCode) {
@@ -614,60 +605,6 @@ class SettingScreen extends ConsumerWidget {
     );
     if (style != null) {
       await ref.read(homeLayoutProvider.notifier).setCreateStyle(style);
-    }
-  }
-
-  Future<void> _showThemeModeSheet(
-    BuildContext context,
-    WidgetRef ref,
-    ThemeMode selected,
-  ) async {
-    final mode = await showModalBottomSheet<ThemeMode>(
-      context: context,
-      showDragHandle: true,
-      builder: (sheetContext) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: ThemeMode.values.map((mode) {
-            return RadioListTile<ThemeMode>(
-              value: mode,
-              groupValue: selected,
-              title: Text(_themeModeLabel(context, mode)),
-              secondary: Icon(_themeModeIcon(mode)),
-              onChanged: (value) => Navigator.pop(sheetContext, value),
-            );
-          }).toList(growable: false),
-        ),
-      ),
-    );
-    if (mode != null) await ref.read(themeProvider.notifier).setTheme(mode);
-  }
-
-  Future<void> _showThemePresetSheet(
-    BuildContext context,
-    WidgetRef ref,
-    AppThemePreset selected,
-  ) async {
-    final preset = await showModalBottomSheet<AppThemePreset>(
-      context: context,
-      showDragHandle: true,
-      builder: (sheetContext) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: AppThemePreset.values.map((preset) {
-            return RadioListTile<AppThemePreset>(
-              value: preset,
-              groupValue: selected,
-              title: Text(_themePresetLabel(context, preset)),
-              secondary: CircleAvatar(backgroundColor: preset.primary),
-              onChanged: (value) => Navigator.pop(sheetContext, value),
-            );
-          }).toList(growable: false),
-        ),
-      ),
-    );
-    if (preset != null) {
-      await ref.read(themePresetProvider.notifier).setPreset(preset);
     }
   }
 

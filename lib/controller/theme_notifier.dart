@@ -9,14 +9,13 @@ import 'UserSettingsController.dart';
 class ThemeNotifier extends StateNotifier<ThemeMode> {
   final UserSettingsController settingsController;
 
-  ThemeNotifier(
-    this.settingsController,
-    ThemeMode initialMode,
-  ) : super(initialMode);
+  ThemeNotifier(this.settingsController, ThemeMode initialMode)
+    : super(initialMode);
 
   Future<void> setTheme(ThemeMode mode) async {
-    state = mode;
+    if (state == mode) return;
     await settingsController.setThemeMode(mode);
+    if (mounted) state = mode;
   }
 
   Future<void> toggleTheme() async {
@@ -32,13 +31,9 @@ final userSettingsRepositoryProvider = Provider<UserSettingsRepository>((ref) {
 
 /// Controller
 final userSettingsControllerProvider = Provider<UserSettingsController>((ref) {
-  return UserSettingsController(
-    ref.read(userSettingsRepositoryProvider),
-  );
+  return UserSettingsController(ref.read(userSettingsRepositoryProvider));
 });
 
 final themeProvider = StateNotifierProvider<ThemeNotifier, ThemeMode>((ref) {
-  throw UnimplementedError(
-    'themeProvider must be overridden in main()',
-  );
+  throw UnimplementedError('themeProvider must be overridden in main()');
 });
