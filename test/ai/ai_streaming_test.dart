@@ -199,26 +199,24 @@ void main() {
     expect(events.last.response!.message.text, 'Ready');
   });
 
-  test('thinking that ends at a provider limit explains the missing answer', () async {
+  test('local thinking-only output remains available when the server stops generation', () async {
     final p = OllamaProvider(baseUrl: base);
     addTearDown(p.close);
     responseText =
         '${jsonEncode({
-          'message': {'role': 'assistant', 'thinking': 'Checking', 'content': ''},
+          'message': {'role': 'assistant', 'thinking': '**Checking** the document', 'content': ''},
           'done': true,
           'done_reason': 'length',
           'eval_count': 2048,
         })}\n';
-    await expectLater(
-      channel(p).stream(request(p)).toList(),
-      throwsA(
-        isA<AiException>().having(
-          (e) => e.message,
-          'message',
-          contains('generation limit'),
-        ),
-      ),
+    final events = await channel(p).stream(request(p)).toList();
+    expect(
+      events.where((event) => event.thinking != null).single.thinking,
+      '**Checking** the document',
     );
+    expect(events.last.response!.message.text, isEmpty);
+    expect(events.last.response!.finishReason, 'length');
+    expect(bodies.single['options']['num_predict'], -1);
   });
 
   test('saved shared output cap does not truncate configured Ollama chat', () async {
@@ -257,6 +255,13 @@ void main() {
     expect(bodies.single['options']['num_predict'], -1);
     expect(bodies.single['think'], isTrue);
     expect(store.load().settings.maxOutputTokens, 2048);
+    await AiConfiguredAssistant(store)
+        .stream(
+          message: AiMessage(role: AiRole.user, text: 'Summarize'),
+          settingsOverride: AiSettings(maxOutputTokens: 128),
+        )
+        .toList();
+    expect(bodies.last['options']['num_predict'], -1);
   });
 
   test('Ollama thinking is opt-in and hidden reasoning emits activity instead of a false timeout', () async {

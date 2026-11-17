@@ -1,6 +1,7 @@
 import '../core/ai_stream.dart';
 import '../memory/memory_context_service.dart';
 import '../rag/context_builder.dart';
+import '../core/ai_input_preparation.dart';
 import '../core/ai_attachments.dart';
 import '../core/ai_cancellation.dart';
 import '../core/ai_error.dart';
@@ -10,6 +11,7 @@ import '../core/ai_provider.dart';
 import '../models/ai_models.dart';
 import '../providers/http/http_ai_provider.dart';
 import 'ai_preferences.dart';
+import 'ai_settings.dart';
 import 'ai_local_models_factory.dart';
 import 'ai_settings_store.dart';
 
@@ -46,11 +48,13 @@ class AiConfiguredAssistant {
     required AiMessage message,
     Iterable<AiMessage> history = const [],
     AiProvider? offline,
+    AiSettings? settingsOverride,
     String? profileId,
     bool containsPrivateContext = false,
     AiCancellationToken? cancellationToken,
   }) async* {
     final preferences = store.load();
+    final settings = settingsOverride ?? preferences.settings;
     final profile = profileId == null
         ? preferences.selectedProfile
         : preferences.profiles.where((p) => p.id == profileId).firstOrNull;
@@ -60,19 +64,6 @@ class AiConfiguredAssistant {
         'Choose an AI profile in settings.',
       );
     }
-    final preparedMessage = prepareAiAttachments([message]).single;
-    final preparedHistory = prepareAiAttachments(history);
-    final AiBuiltContext? context;
-    try {
-      context = await memory?.build(
-        message: preparedMessage,
-        history: preparedHistory,
-        settings: preferences.settings,
-      );
-    } on StateError catch (error) {
-      throw AiException(AiErrorCode.invalidRequest, error.message);
-    }
-    cancellationToken?.throwIfCancelled();
     final local = profile.kind == AiProviderKind.offline && offline == null
         ? await sharedAiLocalModels()
         : null;
@@ -87,6 +78,27 @@ class AiConfiguredAssistant {
       offline: offline ?? local?.provider,
     );
     try {
+      final capabilities = provider.capabilitiesFor(profile.modelId);
+      final preparedMessage = await prepareAiInput(message, capabilities);
+      checkAiInputBudget(preparedMessage, settings);
+      final preparedHistory = <AiMessage>[];
+      for (final previous in history) {
+        cancellationToken?.throwIfCancelled();
+        preparedHistory.add(await prepareAiInput(previous, capabilities));
+      }
+      // Enforce the binary request limit across current and historical turns.
+      prepareAiAttachments([...preparedHistory, preparedMessage]);
+      final AiBuiltContext? context;
+      try {
+        context = await memory?.build(
+          message: preparedMessage,
+          history: preparedHistory,
+          settings: settings,
+        );
+      } on StateError catch (error) {
+        throw AiException(AiErrorCode.invalidRequest, error.message);
+      }
+      cancellationToken?.throwIfCancelled();
       final events =
           AiOrchestrator(
             gateway: AiGateway(
@@ -106,11 +118,13 @@ class AiConfiguredAssistant {
             history: context?.history ?? preparedHistory,
             retrievedContext: context?.excerpts ?? '',
             settings: settingsForCapabilities(
-              preferences.settings,
+              settings,
               provider.capabilitiesFor(profile.modelId),
               // Reasoning and the answer share Ollama's prediction budget. Let
               // local chat finish naturally; Stop remains available.
-              applyOutputLimit: profile.kind != AiProviderKind.ollama,
+              applyOutputLimit:
+                  profile.kind != AiProviderKind.ollama &&
+                  profile.kind != AiProviderKind.offline,
             ),
             allowRemoteProcessing: preferences.allowOnlineProcessing,
             containsPrivateContext:
@@ -121,7 +135,9 @@ class AiConfiguredAssistant {
           );
       await for (final event in events) {
         final response = event.response;
-        if (response != null && (context?.hits.isNotEmpty ?? false)) {
+        if (response != null &&
+            !response.thinkingOnly &&
+            (context?.hits.isNotEmpty ?? false)) {
           yield AiStreamEvent.completed(
             AiResponse(
               selection: response.selection,

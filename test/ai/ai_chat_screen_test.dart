@@ -139,7 +139,7 @@ void main() {
             required cancellationToken,
           }) async* {
             yield const AiStreamEvent.activity(
-              thinking: 'Checking the question',
+              thinking: '**Checking** the question',
             );
             await finishThinking.future;
             yield const AiStreamEvent.delta('Ready');
@@ -168,9 +168,10 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
     }
     expect(find.text('Thinking…'), findsWidgets);
-    await tester.tap(find.byType(ExpansionTile));
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.text('Checking the question'), findsOneWidget);
+    expect(find.text('**Checking** the question'), findsNothing);
+    expect(find.text('pending'), findsNothing);
     finishThinking.complete();
     await tester.pumpAndSettle();
     expect(find.text('Ready'), findsOneWidget);
@@ -184,18 +185,22 @@ void main() {
     'chat renders Markdown/code safely and switches models without losing conversation',
     (tester) async {
       await open(tester);
+      expect(find.byTooltip('Attach files'), findsOneWidget);
+      expect(find.byTooltip('Attach images'), findsNothing);
       await send(tester, 'Question one');
       expect(find.byType(MarkdownBody), findsNWidgets(2));
       expect(find.text('[Image: blocked]'), findsOneWidget);
-      final profile = find.byWidgetPredicate(
-        (w) =>
-            w is DropdownButtonFormField<String> &&
-            w.decoration.labelText == 'AI profile',
-      );
-      await tester.tap(profile);
+      await tester.tap(find.widgetWithText(TextButton, 'small'));
       await tester.pumpAndSettle();
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Search models'),
+        'online',
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Local · small'), findsNothing);
       await tester.tap(find.text('Online · gpt-6.1-sol').last);
       await tester.pumpAndSettle();
+      expect(find.byTooltip('Attach images'), findsOneWidget);
       await send(tester, 'Question two');
       expect(selected, ['first', 'second']);
       expect(histories.last.first.text, 'Question one');
@@ -226,11 +231,11 @@ void main() {
       );
       await open(tester, mobile: true);
       await send(tester, 'Original');
-      await tester.tap(find.byTooltip('Copy message').last);
+      await tester.tap(find.byTooltip('Copy message').first);
       await tester.pump();
       expect(clipboard, contains('اردو'));
-      await tester.ensureVisible(find.text('Edit'));
-      await tester.tap(find.text('Edit'));
+      await tester.ensureVisible(find.byTooltip('Edit message'));
+      await tester.tap(find.byTooltip('Edit message'));
       await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextField).last, 'Edited');
       await tester.tap(find.text('Save and regenerate'));
@@ -247,11 +252,13 @@ void main() {
       await tester.pump(const Duration(milliseconds: 500));
       await tester.pumpAndSettle();
       expect((await chats.list()).single.title, 'My chat');
+      await tester.tap(find.byTooltip('Chat preferences'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Automatic paired-device sync'));
       await tester.pumpAndSettle();
       expect(await chats.syncEnabled, isTrue);
       expect((await chats.list()).single.shareWithDevices, isTrue);
-      await tester.tap(find.byTooltip('Sync shared chats now'));
+      await tester.tap(find.text('Sync shared chats now'));
       await tester.pumpAndSettle();
       expect(find.text('Test sync complete.'), findsOneWidget);
       expect(tester.takeException(), isNull);
@@ -259,6 +266,401 @@ void main() {
       await tester.pumpAndSettle();
     },
   );
+  testWidgets(
+    'creates and pins folders, starts a chat in a folder, moves and pins the chat',
+    (tester) async {
+      await open(tester);
+      Future<void> folder(String name) async {
+        await tester.tap(find.byTooltip('New folder'));
+        await tester.pumpAndSettle();
+        await tester.enterText(find.byType(TextField).last, name);
+        await tester.tap(find.text('Create folder'));
+        await tester.pumpAndSettle();
+      }
+
+      await folder('Work');
+      expect((await chats.folders()).single.name, 'Work');
+      await tester.tap(find.byTooltip('Pin folder'));
+      await tester.pumpAndSettle();
+      expect((await chats.folders()).single.pinned, isTrue);
+      await send(tester, 'Folder conversation');
+      expect((await chats.list()).single.folder, 'Work');
+      expect(
+        (await chats.list()).single.messages.last.elapsedMilliseconds,
+        isNotNull,
+      );
+      expect(find.textContaining('response'), findsWidgets);
+      await folder('Personal');
+      await tester.tap(find.byType(PopupMenuButton<String>));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Move to folder'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Personal').last);
+      await tester.pumpAndSettle();
+      expect((await chats.list()).single.folder, 'Personal');
+      expect((await chats.list()).single.messages, hasLength(2));
+      await tester.tap(find.byTooltip('Chat actions: Folder conversation'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Pin chat'));
+      await tester.pumpAndSettle();
+      expect((await chats.list()).single.pinned, isTrue);
+      expect((await chats.folders()).first.name, 'Work');
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpAndSettle();
+    },
+  );
+
+  testWidgets(
+    'oversized draft is kept, summary is opt-in and reviewed before sending',
+    (tester) async {
+      await open(
+        tester,
+        engine:
+            ({
+              required message,
+              required history,
+              required profileId,
+              required cancellationToken,
+            }) async* {
+              selected.add(profileId);
+              yield AiStreamEvent.completed(
+                AiResponse(
+                  selection: AiModelSelection(
+                    providerId: profileId!,
+                    modelId: 'small',
+                  ),
+                  message: AiMessage(
+                    role: AiRole.assistant,
+                    text: 'A concise summary.',
+                  ),
+                ),
+              );
+            },
+      );
+      final draft = 'Some document facts. ' * 300;
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Message DayArk…'),
+        draft,
+      );
+      await tester.tap(find.byTooltip('Send message'));
+      await tester.pumpAndSettle();
+      expect(find.text('Input exceeds the model limit'), findsOneWidget);
+      expect(selected, isEmpty);
+      expect(await chats.list(), isEmpty);
+      await tester.tap(find.text('Keep draft'));
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<TextField>(
+              find.widgetWithText(TextField, 'Message DayArk…'),
+            )
+            .controller!
+            .text,
+        draft,
+      );
+      await tester.tap(find.byTooltip('Send message'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Summarize in parts'));
+      await tester.pumpAndSettle();
+      expect(find.text('Review shortened prompt'), findsOneWidget);
+      expect(await chats.list(), isEmpty);
+      await tester.tap(find.text('Use summary'));
+      await tester.pumpAndSettle();
+      final input = tester.widget<TextField>(
+        find.widgetWithText(TextField, 'Message DayArk…'),
+      );
+      expect(input.controller!.text, contains('A concise summary.'));
+      expect(input.controller!.text.length, lessThan(draft.length));
+      expect(await chats.list(), isEmpty);
+      await tester.tap(find.byTooltip('Send message'));
+      await tester.pumpAndSettle();
+      expect(
+        (await chats.list()).single.messages.first.message.text,
+        contains('AI-generated summary'),
+      );
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpAndSettle();
+    },
+  );
+
+  testWidgets(
+    'summary progress is a compact chat-pane dialog and streams formatted thoughts',
+    (tester) async {
+      tester.view.physicalSize = const Size(1200, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final finish = Completer<void>();
+      var shellActions = 0;
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            home: Row(
+              children: [
+                SizedBox(
+                  width: 240,
+                  child: Center(
+                    child: TextButton(
+                      onPressed: () => shellActions++,
+                      child: const Text('Shell action'),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: AiChatScreen(
+                    store: chats,
+                    settings: settings,
+                    engine:
+                        ({
+                          required message,
+                          required history,
+                          required profileId,
+                          required cancellationToken,
+                        }) async* {
+                          yield const AiStreamEvent.activity(
+                            thinking: '**Reading** the source',
+                          );
+                          await finish.future;
+                          cancellationToken.throwIfCancelled();
+                          yield AiStreamEvent.completed(
+                            AiResponse(
+                              selection: AiModelSelection(
+                                providerId: profileId!,
+                                modelId: 'small',
+                              ),
+                              message: AiMessage(
+                                role: AiRole.assistant,
+                                text: 'A short summary.',
+                              ),
+                            ),
+                          );
+                        },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final draft = 'Document facts to summarize. ' * 300;
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Message DayArk…'),
+        draft,
+      );
+      await tester.tap(find.byTooltip('Send message'));
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining('I don’t recommend summarizing'),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('Summarize in parts'));
+      for (var i = 0; i < 8; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      expect(find.text('Summarizing input'), findsOneWidget);
+      expect(find.text('Reading the source'), findsOneWidget);
+      expect(find.text('**Reading** the source'), findsNothing);
+      final dialog = tester.getRect(
+        find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.byWidgetPredicate(
+            (widget) => widget is Material && widget.type == MaterialType.card,
+          ),
+        ),
+      );
+
+      expect(dialog.left, greaterThanOrEqualTo(240));
+      expect(dialog.right, lessThanOrEqualTo(1200));
+      expect(dialog.width, lessThanOrEqualTo(440));
+      expect(dialog.height, lessThanOrEqualTo(400));
+      expect(dialog.center.dx, closeTo(720, 1));
+      await tester.tap(find.text('Shell action'));
+      await tester.pump();
+      expect(shellActions, 1);
+      await tester.tap(find.text('Cancel'));
+      finish.complete();
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(
+        tester
+            .widget<TextField>(
+              find.widgetWithText(TextField, 'Message DayArk…'),
+            )
+            .controller!
+            .text,
+        draft,
+      );
+      expect(await chats.list(), isEmpty);
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpAndSettle();
+    },
+  );
+
+  testWidgets(
+    'thinking-only completion stays formatted and readable after reopening',
+    (tester) async {
+      await open(
+        tester,
+        engine:
+            ({
+              required message,
+              required history,
+              required profileId,
+              required cancellationToken,
+            }) async* {
+              yield const AiStreamEvent.activity(
+                thinking: '**Checking** the document',
+              );
+              yield AiStreamEvent.completed(
+                AiResponse(
+                  selection: AiModelSelection(
+                    providerId: profileId!,
+                    modelId: 'small',
+                  ),
+                  message: AiMessage(role: AiRole.assistant, text: ''),
+                  thinkingOnly: true,
+                  finishReason: 'length',
+                ),
+              );
+            },
+      );
+      await send(tester, 'A question');
+      expect(find.byTooltip('Response error details'), findsNothing);
+      expect(
+        find.textContaining('Model stopped after thinking'),
+        findsOneWidget,
+      );
+      final reply = (await chats.list()).single.messages.last;
+      expect(reply.thinking, '**Checking** the document');
+      expect(reply.state, AiChatMessageState.complete);
+      await tester.tap(find.byTooltip('New chat').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('A question'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(ExpansionTile));
+      await tester.pumpAndSettle();
+      expect(find.text('Checking the document'), findsOneWidget);
+      expect(find.text('**Checking** the document'), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpAndSettle();
+    },
+  );
+
+  testWidgets(
+    'large live answer and thoughts keep the actual Stop control responsive',
+    (tester) async {
+      final answer = '**Answer** with `code` and useful details.\n\n' * 3000;
+      final thoughts = '**Checking** the source.\n\n' * 3000;
+      var providerCancelled = false;
+      await open(
+        tester,
+        engine:
+            ({
+              required message,
+              required history,
+              required profileId,
+              required cancellationToken,
+            }) async* {
+              yield AiStreamEvent.activity(thinking: thoughts);
+              yield AiStreamEvent.delta(answer);
+              await cancellationToken.whenCancelled;
+              providerCancelled = true;
+              cancellationToken.throwIfCancelled();
+            },
+      );
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Message DayArk…'),
+        'A long reply',
+      );
+      await tester.tap(find.byTooltip('Send message'));
+      for (var i = 0; i < 6; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      expect(find.byTooltip('Stop response'), findsOneWidget);
+      expect(
+        tester
+            .widgetList<MarkdownBody>(find.byType(MarkdownBody))
+            .every((body) => body.data.length <= 4096),
+        isTrue,
+      );
+      await tester.tap(find.byTooltip('Stop response'));
+      await tester.pump();
+      for (var i = 0; i < 100; i++) {
+        // Let background encoding finish, then flush the widget fake clock.
+        // Awaiting a DB read here would wait on the transaction's fake-clock continuation.
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 10)),
+        );
+        await tester.pump();
+        if (find.byTooltip('Send message').evaluate().isNotEmpty) break;
+      }
+      await tester.pumpAndSettle();
+      expect(providerCancelled, isTrue);
+      final reply = (await tester.runAsync(() => chats.list()))!
+          .single
+          .messages
+          .last;
+      expect(reply.state, AiChatMessageState.stopped);
+      expect(reply.message.text, answer);
+      expect(reply.thinking, thoughts);
+      expect(find.byTooltip('Send message'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpAndSettle();
+    },
+  );
+
+  testWidgets('draft clears after persistence while reply is still streaming', (
+    tester,
+  ) async {
+    final finish = Completer<void>();
+    await open(
+      tester,
+      engine:
+          ({
+            required message,
+            required history,
+            required profileId,
+            required cancellationToken,
+          }) async* {
+            yield const AiStreamEvent.delta('Working');
+            await finish.future;
+            yield AiStreamEvent.completed(
+              AiResponse(
+                selection: AiModelSelection(
+                  providerId: profileId!,
+                  modelId: 'small',
+                ),
+                message: AiMessage(role: AiRole.assistant, text: 'Done'),
+              ),
+            );
+          },
+    );
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Message DayArk…'),
+      'Hello',
+    );
+    await tester.tap(find.byTooltip('Send message'));
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(const Duration(milliseconds: 100));
+    final input = tester.widget<TextField>(
+      find.widgetWithText(TextField, 'Message DayArk…'),
+    );
+    expect(input.controller!.text, isEmpty);
+    expect(find.byTooltip('Stop response'), findsOneWidget);
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Message DayArk…'),
+      'Next question',
+    );
+    finish.complete();
+    await tester.pumpAndSettle();
+    expect(find.text('Done'), findsOneWidget);
+    expect(input.controller!.text, 'Next question');
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('compact composer fits above the software keyboard', (
     tester,
   ) async {
@@ -337,7 +739,7 @@ void main() {
       await open(tester);
       await tester.tap(find.text('Attachment chat'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Edit'));
+      await tester.tap(find.byTooltip('Edit message'));
       await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('Remove attachment'));
       await tester.pumpAndSettle();
@@ -387,7 +789,7 @@ void main() {
       find.text('Partial provider output that must stay hidden'),
       findsNothing,
     );
-    await tester.tap(find.text('View thinking and response'));
+    await tester.tap(find.byTooltip('Response error details'));
     await tester.pumpAndSettle();
     expect(find.textContaining('Synthetic reasoning'), findsOneWidget);
     expect(find.textContaining('RESPONSE RECEIVED'), findsOneWidget);

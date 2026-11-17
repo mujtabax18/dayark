@@ -28,6 +28,7 @@ class AiChatController extends ChangeNotifier {
   late final StreamSubscription<void> _subscription;
   AiConversation? active;
   List<AiConversation> conversations = [];
+  List<AiChatFolder> folders = [];
   bool busy = false, showArchived = false;
   String query = '';
   String? folder, status;
@@ -35,6 +36,7 @@ class AiChatController extends ChangeNotifier {
   String thinkingText = '';
   AiCancellationToken? _token;
   bool _disposed = false;
+  Timer? _streamPublish;
   int _selectionVersion = 0, _refreshVersion = 0;
   void _notify() {
     if (!_disposed) notifyListeners();
@@ -42,6 +44,7 @@ class AiChatController extends ChangeNotifier {
 
   Future<void> refresh() async {
     final version = ++_refreshVersion;
+    final folderList = await store.folders();
     final value = await store.list(
       query: query,
       archived: showArchived,
@@ -61,6 +64,7 @@ class AiChatController extends ChangeNotifier {
         active = latest == null || latest.deleted ? null : latest;
       }
     }
+    folders = folderList;
     conversations = value;
     _notify();
   }
@@ -167,6 +171,7 @@ class AiChatController extends ChangeNotifier {
     String? provider,
     String? model,
     int? retryUserIndex,
+    VoidCallback? onAccepted,
   }) async {
     if (busy) return false;
     if (profileId == null) {
@@ -190,6 +195,7 @@ class AiChatController extends ChangeNotifier {
             title: 'New chat',
             updatedAt: DateTime.now().toUtc(),
             profileId: profileId,
+            folder: folder ?? '',
             shareWithDevices: await store.syncEnabled,
           );
       final previous = retryUserIndex == null
@@ -222,15 +228,59 @@ class AiChatController extends ChangeNotifier {
       );
       await _persist(c);
       accepted = true;
+      onAccepted?.call();
       final history = previous
-          .where((m) => m.state == AiChatMessageState.complete)
+          .where(
+            (m) =>
+                m.state == AiChatMessageState.complete &&
+                (m.message.text.trim().isNotEmpty ||
+                    m.message.attachments.isNotEmpty),
+          )
           .map((m) => m.message)
           .toList();
       final buffer = StringBuffer();
       final thinking = StringBuffer();
       final providerDiagnostics = StringBuffer();
-      final startedAt = DateTime.now();
+      final watch = Stopwatch()..start();
       AiResponse? complete;
+      var dirty = false;
+      var eventsSinceYield = 0;
+      final workSlice = Stopwatch()..start();
+      void publish() {
+        _streamPublish?.cancel();
+        _streamPublish = null;
+        if (!dirty || _disposed || active == null) return;
+        dirty = false;
+        if (thinkingText.length != thinking.length) {
+          thinkingText = thinking.toString();
+        }
+        active = active!.copyWith(
+          messages: [
+            ...active!.messages.take(active!.messages.length - 1),
+            reply.copyWith(
+              message: AiMessage(
+                role: AiRole.assistant,
+                text: buffer.isEmpty ? '…' : buffer.toString(),
+              ),
+            ),
+          ],
+        );
+        _notify();
+      }
+
+      void schedulePublish() {
+        dirty = true;
+        if (_streamPublish != null) return;
+        final size = buffer.length + thinking.length;
+        // Snapshot large strings less often; receipt of every fragment is unchanged.
+        final milliseconds = size > 128 * 1024
+            ? 200
+            : size > 16 * 1024
+            ? 100
+            : 50;
+        _streamPublish = Timer(Duration(milliseconds: milliseconds), publish);
+      }
+
       try {
         await for (final event in engine(
           message: message,
@@ -238,19 +288,29 @@ class AiChatController extends ChangeNotifier {
           profileId: profileId,
           cancellationToken: _token!,
         )) {
+          // A fast socket or buffered stream can otherwise monopolize microtasks.
+          // Yield to input, painting and cancellation without discarding any output.
+          if (++eventsSinceYield >= 64 || workSlice.elapsedMilliseconds >= 8) {
+            await Future<void>.delayed(Duration.zero);
+            eventsSinceYield = 0;
+            workSlice.reset();
+          }
           _token!.throwIfCancelled();
           if (event.isActivity) {
             activity = event.thinking?.isNotEmpty == true
                 ? 'Thinking…'
                 : 'Model is working…';
             if (event.thinking case final value? when value.isNotEmpty) {
-              _appendBounded(thinking, value);
-              thinkingText = thinking.toString();
+              thinking.write(value);
             }
             if (event.diagnostic case final value? when value.isNotEmpty) {
               _appendBounded(providerDiagnostics, value);
             }
-            _notify();
+            schedulePublish();
+            if (thinking.isNotEmpty &&
+                thinking.length == event.thinking?.length) {
+              publish();
+            }
           }
           if (event.response != null) {
             complete = event.response;
@@ -258,21 +318,12 @@ class AiChatController extends ChangeNotifier {
             buffer.write(event.text);
             if (event.text.isNotEmpty) activity = 'Receiving response…';
           }
-          if (buffer.isNotEmpty) {
-            active = active!.copyWith(
-              messages: [
-                ...active!.messages.take(active!.messages.length - 1),
-                reply.copyWith(
-                  message: AiMessage(
-                    role: AiRole.assistant,
-                    text: buffer.toString(),
-                  ),
-                ),
-              ],
-            );
-            _notify();
+          if (event.text.isNotEmpty) {
+            schedulePublish();
+            if (buffer.length == event.text.length) publish();
           }
         }
+        publish();
         _token!.throwIfCancelled();
         if (complete == null) {
           throw const AiException(
@@ -283,9 +334,12 @@ class AiChatController extends ChangeNotifier {
         final finished = AiChatMessage(
           id: reply.id,
           message: complete.message,
+          thinkingOnly: complete.thinkingOnly,
           createdAt: reply.createdAt,
           provider: provider ?? complete.selection.providerId,
           model: complete.selection.modelId,
+          elapsedMilliseconds: watch.elapsedMilliseconds,
+          thinking: thinking.isEmpty ? null : thinking.toString(),
         );
         await _persist(
           active!.copyWith(
@@ -296,6 +350,7 @@ class AiChatController extends ChangeNotifier {
           ),
         );
       } catch (error) {
+        publish();
         final cancelled = _token!.isCancelled;
         final safe = cancelled
             ? 'Response stopped. Retry to generate again.'
@@ -307,7 +362,7 @@ class AiChatController extends ChangeNotifier {
           error: error,
           provider: provider,
           model: model,
-          elapsed: DateTime.now().difference(startedAt),
+          elapsed: watch.elapsed,
           thinking: thinking.toString(),
           response: buffer.toString(),
           providerDiagnostics: providerDiagnostics.toString(),
@@ -322,6 +377,8 @@ class AiChatController extends ChangeNotifier {
           ),
           error: safe,
           diagnostics: details,
+          elapsedMilliseconds: watch.elapsedMilliseconds,
+          thinking: thinking.isEmpty ? null : thinking.toString(),
         );
         await _persist(
           active!.copyWith(
@@ -337,6 +394,8 @@ class AiChatController extends ChangeNotifier {
     } catch (_) {
       status = 'Unable to save this chat. Check storage and retry.';
     } finally {
+      _streamPublish?.cancel();
+      _streamPublish = null;
       busy = false;
       activity = null;
       _token = null;
@@ -387,6 +446,7 @@ class AiChatController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _streamPublish?.cancel();
     _token?.cancel();
     unawaited(_subscription.cancel());
     super.dispose();

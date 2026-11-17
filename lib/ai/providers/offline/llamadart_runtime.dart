@@ -91,6 +91,7 @@ class LlamadartRuntime implements AiOfflineRuntime, AiStreamingOfflineRuntime {
     final remove = token.onCancel(engine.cancelGeneration);
     try {
       final buffer = StringBuffer();
+      var hasThinking = false;
       String? finish;
       AiUsage usage = const AiUsage();
       final system = request.messages
@@ -114,10 +115,16 @@ class LlamadartRuntime implements AiOfflineRuntime, AiStreamingOfflineRuntime {
         messages,
         params: GenerationParams(
           temp: request.settings.temperature ?? 0.8,
-          maxTokens: request.settings.maxOutputTokens ?? 1024,
+          // llama.cpp's Dart loop requires a positive token count. This sentinel
+          // removes the app's default output quota; EOS, native context and Stop govern completion.
+          maxTokens: request.settings.maxOutputTokens ?? 0x7fffffff,
         ),
       )) {
         token.throwIfCancelled();
+        if (chunk.thinking.isNotEmpty) {
+          hasThinking = true;
+          yield AiStreamEvent.activity(thinking: chunk.thinking);
+        }
         buffer.write(chunk.text);
         if (chunk.text.isNotEmpty) yield AiStreamEvent.delta(chunk.text);
         if (chunk.choices.isNotEmpty &&
@@ -132,7 +139,7 @@ class LlamadartRuntime implements AiOfflineRuntime, AiStreamingOfflineRuntime {
         }
       }
       token.throwIfCancelled();
-      if (buffer.toString().trim().isEmpty) {
+      if (buffer.toString().trim().isEmpty && !hasThinking) {
         throw const AiException(
           AiErrorCode.invalidResponse,
           'Local model returned no text.',
@@ -144,6 +151,7 @@ class LlamadartRuntime implements AiOfflineRuntime, AiStreamingOfflineRuntime {
           message: AiMessage(role: AiRole.assistant, text: buffer.toString()),
           usage: usage,
           finishReason: finish,
+          thinkingOnly: buffer.toString().trim().isEmpty && hasThinking,
         ),
       );
     } on AiException {

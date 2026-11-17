@@ -168,7 +168,11 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Local model manager'), findsOneWidget);
       expect(find.textContaining('Gemma 4 E4B'), findsOneWidget);
-      expect(find.text('2048 tokens'), findsOneWidget);
+      expect(find.text('Maximum output tokens'), findsNothing);
+      expect(
+        find.textContaining('Local output follows the model'),
+        findsOneWidget,
+      );
       expect(find.text('4096 tokens'), findsOneWidget);
       await tester.tap(find.text('Provider and model defaults'));
       await tester.pumpAndSettle();
@@ -185,6 +189,63 @@ void main() {
         'new-default',
       ]);
       expect(store.load().profiles, isEmpty);
+    },
+  );
+
+  testWidgets(
+    'settings uses searchable model selection and persists its choice on mobile',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await store.save(
+        AiPreferences(
+          profiles: [
+            AiProviderProfile(
+              id: 'api',
+              name: 'My API',
+              kind: AiProviderKind.openai,
+              modelId: 'old-model',
+            ),
+          ],
+          selectedProfileId: 'api',
+        ),
+      );
+      final defaults = store.loadDefaults().toJson();
+      final providers = defaults['providers'] as List;
+      final openai = providers.firstWhere((p) => p['kind'] == 'openai');
+      openai['models'] = ['old-model', 'replacement-model'];
+      await store.saveDefaults(AiDefaults.fromJson(defaults));
+      await tester.pumpWidget(
+        MaterialApp(home: AiSettingsScreen(store: store)),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(ActionChip, 'Model'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(ListTile, 'old-model'));
+      await tester.pumpAndSettle();
+      tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+      addTearDown(tester.view.resetViewInsets);
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Search models'),
+        'replacement',
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(
+          of: find.byType(BottomSheet),
+          matching: find.text('old-model'),
+        ),
+        findsNothing,
+      );
+      await tester.tap(find.text('replacement-model'));
+      tester.view.resetViewInsets();
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Save settings'));
+      await tester.pumpAndSettle();
+      expect(store.load().selectedProfile!.modelId, 'replacement-model');
+      expect(tester.takeException(), isNull);
     },
   );
 

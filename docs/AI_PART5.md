@@ -15,7 +15,7 @@ not change the global default profile.
 | 32 | Selectable Markdown, fenced code, lists, tables, Unicode/RTL content; model-generated images never initiate network/file loads; external links require a user click and review |
 | 33 | Copy, edit-and-regenerate, retry failed/stopped replies, regenerate the latest assistant turn; editing can remove attachments and replaces subsequent context |
 | 34 | Rename, pin/unpin, archive/unarchive and confirm deletion |
-| 35 | Folder assignment and folder filtering; parameterized title/message search; archived history view |
+| 35 | Durable empty folders, folder pins, move-to-folder controls and folder filtering; parameterized title/message search; archived history view |
 | 36 | Per-conversation profile selection, shared history, model provenance on replies |
 | 37 | App-owned attachment bytes: PNG/JPEG/WebP, PDF, UTF-8 TXT/Markdown; capable adapters serialize inline multimodal parts; text documents also work offline |
 | 38 | JSON, Markdown or plain-text export through the platform share/save sheet; JSON contains attachment bytes; text formats list attachment metadata |
@@ -72,7 +72,7 @@ messages. PNG/JPEG/WebP and PDFs are sent inline only to recognized capable
 models (or explicitly configured adapter capability overrides). Known supported
 OpenAI/Gemini/Claude models accept images/PDFs; the configured Gemma 4 Ollama
 adapter accepts images. The embedded CPU runtime and unknown compatible-model
-configurations remain text only. Unsupported attachments produce an actionable
+configurations remain text only; PDF text is extracted locally for these configurations. Unsupported attachments produce an actionable
 error instead of being silently dropped. A user can switch to a capable profile
 or edit the source message to remove an attachment.
 
@@ -235,3 +235,6 @@ regressions for startup/activity timing, thinking controls, and Home feature
 registration/migration/navigation. The five-provider local simulation passed.
 Scoped AI/test/tool analysis reported no issues; the broader navigation/settings
 check only reports existing filename-style notices on legacy CamelCase files.
+
+
+Chat refinements and input recovery are documented in [Part 8](AI_PART8.md): explicit settings navigation, independent folder creation and pinning, message timestamps and response duration, action icons outside bubbles, and reviewed chunked summarization for oversized converted text.

@@ -269,6 +269,7 @@ class AiGateway {
           ),
           usage: response.usage,
           finishReason: response.finishReason,
+          thinkingOnly: response.thinkingOnly,
         );
 
   AiManagedProvider _managed(String providerId, bool allowRemoteProcessing) {

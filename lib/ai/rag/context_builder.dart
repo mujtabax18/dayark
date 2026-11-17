@@ -34,7 +34,7 @@ class ContextBuilder {
         utf8.encode(message.text).length;
     if (remaining < 0) {
       throw StateError(
-        'Message and instructions exceed the context budget. Reduce input or increase context size.',
+        'The message, converted file text or voice transcript exceeds the context limit. Please use a smaller input, summarize it in parts, or increase the context size in AI settings.',
       );
     }
     final selected = <RetrievalHit>[];

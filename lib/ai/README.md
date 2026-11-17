@@ -1,4 +1,4 @@
-# DayArk AI — roadmap Parts 1–5
+# DayArk AI — roadmap Parts 1–8
 
 Import `package:metersystem/ai/ai.dart`. All providers share `AiGateway` and
 `AiOrchestrator`. No provider is registered or activated during app startup.
@@ -109,7 +109,7 @@ local model management, populated model pickers, editable provider/catalogue
 defaults, secure credentials and privacy controls. See [Part 4](../../docs/AI_PART4.md).
 Part 5 adds persistent AI Chat, streaming, message operations, folders/search,
 attachments, export and optional paired-device sync. See [Part 5](../../docs/AI_PART5.md).
-Voice, memory, RAG and DayArk record access remain later parts.
+Parts 6–7 add voice, memory and RAG (see below). DayArk record access remains a later release.
 
 ## Verification
 
@@ -181,3 +181,12 @@ Part 7 adds **Memory & knowledge** in chat and settings, with approved facts,
 document ingestion, local embeddings, keyword/hybrid retrieval, summaries,
 source links and persistent private-context permissions. See
 [AI_PART7.md](../../docs/AI_PART7.md) for setup, storage boundaries and validation.
+
+## Release acceptance
+
+Part 8 adds a repeatable release check, cross-layer regression coverage, a local
+multilingual benchmark runner and the refreshed chat/settings experience. Run
+`python3 tool/ai/verify_release.py --linux-build` on Linux. See
+[AI_PART8.md](../../docs/AI_PART8.md) for coverage, benchmark instructions and
+the pending physical-device acceptance matrix. Automated tests do not certify
+real-model quality or support on untested operating systems.

@@ -38,6 +38,93 @@ void main() {
     await a.close();
     await b.close();
   });
+  test('empty and pinned folders survive reopening and version 1 migration preserves chats', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'dayark-folder-migration',
+    );
+    addTearDown(() => directory.delete(recursive: true));
+    final file = File('${directory.path}/chats.sqlite');
+    var store = AiChatStore(AiChatDatabase(NativeDatabase(file)));
+    final original = await store.save(
+      conversation('legacy').copyWith(folder: 'Legacy folder'),
+    );
+    // Reproduce the previous schema (conversation tables only, user_version=1).
+    await store.database.customStatement('DROP TABLE chat_folders');
+    await store.database.customStatement('PRAGMA user_version=1');
+    await store.close();
+    store = AiChatStore(AiChatDatabase(NativeDatabase(file)));
+    expect((await store.folders()).single.name, 'Legacy folder');
+    expect(
+      (await store.get('legacy'))!.messages.single.message.text,
+      original.messages.single.message.text,
+    );
+    await store.saveFolder('Empty folder', pinned: true);
+    await store.saveFolder('Another folder');
+    await store.close();
+    store = AiChatStore(AiChatDatabase(NativeDatabase(file)));
+    final folders = await store.folders();
+    expect(folders.first.name, 'Empty folder');
+    expect(folders.first.pinned, isTrue);
+    expect(
+      folders.map((f) => f.name),
+      containsAll(['Another folder', 'Legacy folder']),
+    );
+    await store.close();
+  });
+
+  test('message timing roundtrips through JSON and sync while old messages stay readable', () async {
+    final message = AiChatMessage(
+      id: 'reply',
+      message: AiMessage(role: AiRole.assistant, text: 'Hello'),
+      createdAt: DateTime.utc(2026, 11, 17, 8),
+      elapsedMilliseconds: 1456,
+    );
+    final saved = await a.save(
+      conversation('timed', share: true).copyWith(messages: [message]),
+    );
+    expect((await a.get(saved.id))!.messages.single.elapsedMilliseconds, 1456);
+    await a.setSyncEnabled(true);
+    await b.setSyncEnabled(true);
+    await b.mergeSync(await a.syncSnapshot());
+    expect((await b.get(saved.id))!.messages.single.elapsedMilliseconds, 1456);
+    expect(
+      (await b.get(saved.id))!.messages.single.createdAt,
+      message.createdAt,
+    );
+    final legacy = message.toJson()..remove('elapsedMilliseconds');
+    expect(AiChatMessage.fromJson(legacy).elapsedMilliseconds, isNull);
+  });
+
+  test(
+    'thinking-only completion keeps thoughts local while syncing its status',
+    () async {
+      final reply = AiChatMessage(
+        id: 'thoughts',
+        message: AiMessage(role: AiRole.assistant, text: ''),
+        createdAt: DateTime.now(),
+        thinking: '**Checking** private source',
+        thinkingOnly: true,
+      );
+      await a.save(
+        conversation('thinking-chat', share: true).copyWith(messages: [reply]),
+      );
+      await a.setSyncEnabled(true);
+      await b.setSyncEnabled(true);
+      final snapshot = await a.syncSnapshot();
+      expect(jsonEncode(snapshot), isNot(contains('private source')));
+      await b.mergeSync(snapshot);
+      expect(
+        (await a.get('thinking-chat'))!.messages.single.thinking,
+        '**Checking** private source',
+      );
+      expect((await b.get('thinking-chat'))!.messages.single.thinking, isNull);
+      expect(
+        (await b.get('thinking-chat'))!.messages.single.thinkingOnly,
+        isTrue,
+      );
+    },
+  );
+
   test(
     'database persists messages and metadata across a file reopen',
     () async {

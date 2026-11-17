@@ -4,9 +4,49 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
+import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
 import 'ai_conversation.dart';
+
+const _backgroundChatThreshold = 64 * 1024;
+
+AiConversation _decodeChat(String payload) =>
+    AiConversation.fromJson(jsonDecode(payload) as Map<String, dynamic>);
+
+Future<AiConversation> _readChat(String payload) =>
+    payload.length >= _backgroundChatThreshold
+    ? compute(_decodeChat, payload)
+    : Future.value(_decodeChat(payload));
+
+({String payload, String search}) _encodeChat(AiConversation conversation) {
+  final payload = jsonEncode(conversation.toJson());
+  if (utf8.encode(payload).length > 24 * 1024 * 1024) {
+    throw const FormatException(
+      'Conversation exceeds 24 MiB. Start a new chat.',
+    );
+  }
+  return (
+    payload: payload,
+    search:
+        '${conversation.title}\n${conversation.messages.map((m) => m.message.text).join('\n')}',
+  );
+}
+
+bool _largeChat(AiConversation conversation) {
+  var size = 0;
+  for (final item in conversation.messages) {
+    size +=
+        item.message.text.length +
+        (item.thinking?.length ?? 0) +
+        (item.diagnostics?.length ?? 0);
+    for (final attachment in item.message.attachments) {
+      size += attachment.bytes?.length ?? 0;
+    }
+    if (size >= _backgroundChatThreshold) return true;
+  }
+  return false;
+}
 
 class AiChatSyncLimit implements Exception {
   const AiChatSyncLimit();
@@ -19,12 +59,16 @@ class AiChatConflict implements Exception {
 class AiChatDatabase extends GeneratedDatabase {
   AiChatDatabase(super.executor);
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
   @override
   Iterable<TableInfo<Table, dynamic>> get allTables => const [];
   @override
   MigrationStrategy get migration => MigrationStrategy(
+    onUpgrade: (m, from, to) async {
+      if (from < 2) await _createFolders();
+    },
     onCreate: (m) async {
+      await _createFolders();
       await customStatement(
         'CREATE TABLE conversations (id TEXT PRIMARY KEY, title TEXT NOT NULL, folder TEXT NOT NULL, pinned INTEGER NOT NULL, archived INTEGER NOT NULL, deleted INTEGER NOT NULL, shared INTEGER NOT NULL, revision INTEGER NOT NULL, search_text TEXT NOT NULL, payload TEXT NOT NULL)',
       );
@@ -33,6 +77,15 @@ class AiChatDatabase extends GeneratedDatabase {
       );
     },
   );
+  Future<void> _createFolders() => customStatement(
+    'CREATE TABLE IF NOT EXISTS chat_folders (name TEXT PRIMARY KEY, pinned INTEGER NOT NULL DEFAULT 0)',
+  );
+}
+
+class AiChatFolder {
+  const AiChatFolder(this.name, {this.pinned = false});
+  final String name;
+  final bool pinned;
 }
 
 /// Separate AI-only database; never queries DayArk feature records or credentials.
@@ -99,6 +152,37 @@ class AiChatStore {
     _changes.add(null);
   }
 
+  Future<List<AiChatFolder>> folders() async {
+    final rows = await database
+        .customSelect(
+          "SELECT name, max(pinned) AS pinned FROM (SELECT name,pinned FROM chat_folders UNION ALL SELECT folder AS name,0 AS pinned FROM conversations WHERE folder<>'' AND deleted=0) GROUP BY name ORDER BY pinned DESC, lower(name), name",
+        )
+        .get();
+    return [
+      for (final row in rows)
+        AiChatFolder(
+          row.read<String>('name'),
+          pinned: row.read<int>('pinned') == 1,
+        ),
+    ];
+  }
+
+  Future<void> saveFolder(String name, {bool? pinned}) async {
+    name = name.trim();
+    if (name.isEmpty || name.length > 100) {
+      throw const FormatException(
+        'Folder names must contain 1–100 characters.',
+      );
+    }
+    await database.customStatement(
+      pinned == null
+          ? 'INSERT OR IGNORE INTO chat_folders(name,pinned) VALUES (?,0)'
+          : 'INSERT INTO chat_folders(name,pinned) VALUES (?,?) ON CONFLICT(name) DO UPDATE SET pinned=excluded.pinned',
+      [name, if (pinned != null) pinned ? 1 : 0],
+    );
+    _changes.add(null);
+  }
+
   Future<AiConversation?> get(String id) async {
     final row = await database
         .customSelect(
@@ -106,11 +190,7 @@ class AiChatStore {
           variables: [Variable(id)],
         )
         .getSingleOrNull();
-    return row == null
-        ? null
-        : AiConversation.fromJson(
-            jsonDecode(row.read<String>('payload')) as Map<String, dynamic>,
-          );
+    return row == null ? null : await _readChat(row.read<String>('payload'));
   }
 
   Future<List<AiConversation>> list({
@@ -148,22 +228,17 @@ class AiChatStore {
           )
           .toList();
     }
-    return rows
-        .map(
-          (r) => AiConversation.fromJson(
-            jsonDecode(r.read<String>('payload')) as Map<String, dynamic>,
-          ),
-        )
-        .toList();
+    final conversations = <AiConversation>[];
+    for (final row in rows) {
+      conversations.add(await _readChat(row.read<String>('payload')));
+    }
+    return conversations;
   }
 
   Future<void> _write(AiConversation c) async {
-    final encoded = jsonEncode(c.toJson());
-    if (utf8.encode(encoded).length > 24 * 1024 * 1024) {
-      throw const FormatException(
-        'Conversation exceeds 24 MiB. Start a new chat.',
-      );
-    }
+    final encoded = _largeChat(c)
+        ? await compute(_encodeChat, c)
+        : _encodeChat(c);
     await database.customStatement(
       'INSERT OR REPLACE INTO conversations VALUES (?,?,?,?,?,?,?,?,?,?)',
       [
@@ -175,8 +250,8 @@ class AiChatStore {
         c.deleted ? 1 : 0,
         c.shareWithDevices ? 1 : 0,
         c.revision,
-        '${c.title}\n${c.messages.map((m) => m.message.text).join('\n')}',
-        encoded,
+        encoded.search,
+        encoded.payload,
       ],
     );
   }

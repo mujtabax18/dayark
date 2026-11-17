@@ -70,7 +70,9 @@ abstract class HttpAiProvider
       AiHttpProtocol.gemini =>
         modelId.contains('gemini') && !modelId.contains('embed'),
       AiHttpProtocol.anthropic => modelId.startsWith('claude-'),
-      AiHttpProtocol.ollama => modelId.startsWith('gemma4'),
+      AiHttpProtocol.ollama => RegExp(
+        r'^(gemma4|qwen3\.5|qwen3-vl|llava)(:|$)',
+      ).hasMatch(modelId),
       AiHttpProtocol.compatible => false,
     };
     return AiCapabilities(
@@ -300,7 +302,7 @@ abstract class HttpAiProvider
           'options': {
             if (settings.temperature != null)
               'temperature': settings.temperature,
-            'num_predict': settings.maxOutputTokens ?? -1,
+            'num_predict': -1,
             if (settings.contextWindowTokens != null)
               'num_ctx': settings.contextWindowTokens,
           },
@@ -374,6 +376,7 @@ abstract class HttpAiProvider
           )
         : prepared.path;
     final buffer = StringBuffer();
+    var hasThinking = false;
     String? finish;
     int? input, output;
     var terminal = false;
@@ -477,6 +480,7 @@ abstract class HttpAiProvider
           }
       }
       if (activity) {
+        hasThinking = hasThinking || (thinking?.isNotEmpty ?? false);
         yield AiStreamEvent.activity(thinking: thinking);
       }
       if (delta.isNotEmpty) {
@@ -493,14 +497,11 @@ abstract class HttpAiProvider
             'Output tokens: ${output ?? 'not provided'}',
       );
     }
-    if (terminal && buffer.toString().trim().isEmpty && finish == 'length') {
-      throw const AiException(
-        AiErrorCode.invalidResponse,
-        'The model reached its generation limit before producing an answer. '
-        'Increase the model’s limit or disable thinking and retry.',
-      );
-    }
-    if (!terminal || buffer.toString().trim().isEmpty) {
+    // Reasoning is useful output even when a local model ends without a final answer.
+    // Keep it in the thinking channel; never promote it into conversation history.
+    if (!terminal ||
+        (buffer.toString().trim().isEmpty &&
+            !(protocol == AiHttpProtocol.ollama && hasThinking))) {
       throw invalidAiResponse;
     }
     yield AiStreamEvent.completed(
@@ -509,6 +510,7 @@ abstract class HttpAiProvider
         message: AiMessage(role: AiRole.assistant, text: buffer.toString()),
         usage: AiUsage(inputTokens: input, outputTokens: output),
         finishReason: finish,
+        thinkingOnly: buffer.toString().trim().isEmpty && hasThinking,
       ),
     );
   }

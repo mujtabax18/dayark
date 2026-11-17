@@ -69,12 +69,7 @@ void main() {
           reason:
               '$id: ${tester.widgetList<Text>(find.byType(Text)).map((t) => t.data).where((s) => s != null).join(' | ')}',
         );
-        final modelPicker = find.byWidgetPredicate(
-          (w) =>
-              w is DropdownButtonFormField<String> &&
-              w.decoration.labelText == 'Model',
-        );
-        await tester.tap(modelPicker);
+        await tester.tap(find.widgetWithText(ListTile, 'Model'));
         await tester.pumpAndSettle();
         final modelId = spec.$1 == AiProviderKind.ollama
             ? 'test-chat:latest'

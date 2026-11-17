@@ -16,7 +16,13 @@ class AiChatMessage {
     this.model,
     this.error,
     this.diagnostics,
+    this.elapsedMilliseconds,
+    this.thinking,
+    this.thinkingOnly = false,
   });
+  final String? thinking;
+  final bool thinkingOnly;
+  final int? elapsedMilliseconds;
   final String id;
   final AiMessage message;
   final DateTime createdAt;
@@ -27,6 +33,9 @@ class AiChatMessage {
     AiChatMessageState? state,
     String? error,
     String? diagnostics,
+    int? elapsedMilliseconds,
+    String? thinking,
+    bool? thinkingOnly,
   }) => AiChatMessage(
     id: id,
     message: message ?? this.message,
@@ -36,18 +45,24 @@ class AiChatMessage {
     model: model,
     error: error,
     diagnostics: diagnostics ?? this.diagnostics,
+    elapsedMilliseconds: elapsedMilliseconds ?? this.elapsedMilliseconds,
+    thinking: thinking ?? this.thinking,
+    thinkingOnly: thinkingOnly ?? this.thinkingOnly,
   );
   Map<String, dynamic> toJson({bool includeDiagnostics = true}) => {
     'id': id,
     'role': message.role.name,
+    if (thinkingOnly) 'thinkingOnly': true,
     'text': message.text,
     'containsPrivateContext': message.containsPrivateContext,
     'createdAt': createdAt.toUtc().toIso8601String(),
+    if (elapsedMilliseconds != null) 'elapsedMilliseconds': elapsedMilliseconds,
     'state': state.name,
     'provider': provider,
     'model': model,
     'error': error,
     if (includeDiagnostics) 'diagnostics': diagnostics,
+    if (includeDiagnostics && thinking != null) 'thinking': thinking,
     'attachments': message.attachments
         .map(
           (a) => {
@@ -98,6 +113,12 @@ class AiChatMessage {
       model: j['model'] as String?,
       error: j['error'] as String?,
       diagnostics: j['diagnostics'] as String?,
+      thinking: j['thinking'] as String?,
+      thinkingOnly: j['thinkingOnly'] == true,
+      elapsedMilliseconds: (j['elapsedMilliseconds'] as int?)?.clamp(
+        0,
+        86400000,
+      ),
     );
   }
 }

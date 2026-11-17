@@ -1,8 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+
+import '../../screens/navigation/widgets/desktop_navigation_scope.dart';
+import '../../utlis/app_router.dart';
+
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
 import '../core/ai_capabilities.dart';
+import '../widgets/ai_choice_picker.dart';
 import '../memory/memory_screen.dart';
 import '../core/ai_gateway.dart';
 import '../providers/http/http_ai_provider.dart';
@@ -30,6 +36,7 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
   AiLocalModels? _local;
   final Set<String> _discovered = {};
   final _form = GlobalKey<FormState>();
+  final _sections = List.generate(4, (_) => GlobalKey());
   final _name = TextEditingController(),
       _model = TextEditingController(),
       _url = TextEditingController(),
@@ -404,7 +411,7 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
       controller: c,
       decoration: InputDecoration(
         labelText: label,
-        border: const OutlineInputBorder(),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
       ),
       maxLines: lines,
       obscureText: secret,
@@ -433,7 +440,7 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
           helperText: controller == _output && _kind == AiProviderKind.ollama
               ? 'Ollama chat waits for completion and does not apply this cap.'
               : null,
-          border: const OutlineInputBorder(),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
         ),
         items: values
             .map((v) => DropdownMenuItem(value: v, child: Text('$v tokens')))
@@ -455,11 +462,83 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
     );
   }
 
+  Widget _section(
+    int index,
+    String title,
+    String description,
+    IconData icon,
+    List<Widget> children,
+  ) => Card(
+    key: _sections[index],
+    margin: const EdgeInsets.only(bottom: 20),
+    elevation: 0,
+    color: Theme.of(context).colorScheme.surfaceContainerLow,
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(20),
+      side: BorderSide(
+        color: Theme.of(context).colorScheme.outlineVariant
+            .withValues(alpha: .5),
+      ),
+    ),
+    child: Padding(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  title,
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(description, style: Theme.of(context).textTheme.bodySmall),
+          const SizedBox(height: 20),
+          ...children,
+        ],
+      ),
+    ),
+  );
+
+  void _jumpTo(int index) {
+    final target = _sections[index].currentContext;
+    if (target != null) {
+      Scrollable.ensureVisible(
+        target,
+        duration: MediaQuery.disableAnimationsOf(context)
+            ? Duration.zero
+            : const Duration(milliseconds: 260),
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
+
+  void _back() {
+    final desktop = DesktopNavigationScope.maybeOf(context);
+    if (MediaQuery.sizeOf(context).width >= 1100 && desktop != null) {
+      desktop.onOpenRoute(RoutesStr.settings);
+    } else if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    } else {
+      final router = GoRouter.maybeOf(context);
+      if (router != null) router.go(RoutesStr.settings);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_store == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('AI settings')),
+        appBar: AppBar(
+          leading: BackButton(onPressed: _back),
+          title: const Text('AI settings'),
+        ),
         body: Center(
           child: _busy
               ? const CircularProgressIndicator()
@@ -478,7 +557,27 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
     }
     final caps = _capabilities;
     return Scaffold(
-      appBar: AppBar(title: const Text('AI settings')),
+      appBar: AppBar(
+        leading: BackButton(onPressed: _back),
+        title: const Text('AI settings'),
+        scrolledUnderElevation: 0,
+      ),
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              FilledButton.icon(
+                onPressed: _busy ? null : _save,
+                icon: const Icon(Icons.check_rounded, size: 18),
+                label: const Text('Save settings'),
+              ),
+            ],
+          ),
+        ),
+      ),
       body: AbsorbPointer(
         absorbing: _busy,
         child: Center(
@@ -486,23 +585,55 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
             constraints: const BoxConstraints(maxWidth: 760),
             child: Form(
               key: _form,
-              child: ListView(
+              child: SingleChildScrollView(
                 padding: const EdgeInsets.all(20),
-                children: [
-                  if (_busy) const LinearProgressIndicator(),
-                  if (_status != null)
-                    Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Text(_status!, semanticsLabel: _status),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      'Your AI, your preferences',
+                      style: Theme.of(context).textTheme.headlineSmall,
                     ),
-                  if (_store == null && !_busy)
-                    TextButton(
-                      onPressed: _load,
-                      child: const Text('Retry loading'),
+                    const SizedBox(height: 8),
+                    Text(
+                      'One assistant. The models and controls that work for you.',
+                      style: Theme.of(context).textTheme.bodyMedium,
                     ),
-                  Card(
-                    child: Column(
+                    const SizedBox(height: 16),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
                       children: [
+                        for (final entry in [
+                          'General',
+                          'Model',
+                          'Personalization',
+                          'Privacy',
+                        ].asMap().entries)
+                          ActionChip(
+                            label: Text(entry.value),
+                            onPressed: () => _jumpTo(entry.key),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
+                    if (_busy) const LinearProgressIndicator(),
+                    if (_status != null)
+                      Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Text(_status!, semanticsLabel: _status),
+                      ),
+                    if (_store == null && !_busy)
+                      TextButton(
+                        onPressed: _load,
+                        child: const Text('Retry loading'),
+                      ),
+                    _section(
+                      0,
+                      'General',
+                      'Manage models, memory and your assistant preferences.',
+                      Icons.settings_outlined,
+                      [
                         ListTile(
                           leading: const Icon(
                             Icons.download_for_offline_outlined,
@@ -539,282 +670,335 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
                         ),
                       ],
                     ),
-                  ),
-                  const SizedBox(height: 16),
-                  const Text('Provider profiles'),
-                  DropdownButtonFormField<String>(
-                    key: ValueKey(_id),
-                    initialValue: _id ?? '',
-                    items: [
-                      const DropdownMenuItem(
-                        value: '',
-                        child: Text('New profile'),
-                      ),
-                      ..._preferences.profiles.map(
-                        (p) =>
-                            DropdownMenuItem(value: p.id, child: Text(p.name)),
-                      ),
-                    ],
-                    onChanged: (id) => setState(
-                      () => _select(
-                        _preferences.profiles
-                            .where((p) => p.id == id)
-                            .firstOrNull,
-                      ),
-                    ),
-                  ),
-                  _field(_name, 'Profile name', required: true),
-                  DropdownButtonFormField<AiProviderKind>(
-                    key: ValueKey(_kind),
-                    initialValue: _kind,
-                    items: AiProviderKind.values
-                        .map(
-                          (k) => DropdownMenuItem(
-                            value: k,
-                            child: Text(aiProviderLabel(k)),
+                    const SizedBox(height: 16),
+                    _section(
+                      1,
+                      'Model & connection',
+                      'Choose where your conversations are processed.',
+                      Icons.auto_awesome_outlined,
+                      [
+                        DropdownButtonFormField<String>(
+                          key: ValueKey(_id),
+                          initialValue: _id ?? '',
+                          isExpanded: true,
+                          decoration: const InputDecoration(
+                            labelText: 'Provider profile',
                           ),
-                        )
-                        .toList(),
-                    onChanged: (v) {
-                      setState(() => _changeKind(v!));
-                      if (v == AiProviderKind.offline) {
-                        _run(() async {
-                          await _ensureLocal();
-                        });
-                      }
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    key: ValueKey(
-                      '${_kind.name}:${_model.text}:${_discovered.length}:${_defaults.hashCode}',
-                    ),
-                    initialValue: _model.text,
-                    isExpanded: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Model',
-                      border: OutlineInputBorder(),
-                    ),
-                    items: _modelChoices
-                        .map(
-                          (id) => DropdownMenuItem(
-                            value: id,
-                            child: Text(
-                              _modelLabel(id),
-                              overflow: TextOverflow.ellipsis,
+                          items: [
+                            const DropdownMenuItem(
+                              value: '',
+                              child: Text('New profile'),
+                            ),
+                            ..._preferences.profiles.map(
+                              (p) => DropdownMenuItem(
+                                value: p.id,
+                                child: Text(p.name),
+                              ),
+                            ),
+                          ],
+                          onChanged: (id) => setState(
+                            () => _select(
+                              _preferences.profiles
+                                  .where((p) => p.id == id)
+                                  .firstOrNull,
                             ),
                           ),
-                        )
-                        .toList(),
-                    onChanged: (id) => setState(() => _model.text = id!),
-                  ),
-                  if (_kind == AiProviderKind.offline)
-                    TextButton.icon(
-                      onPressed: _openManager,
-                      icon: const Icon(Icons.download),
-                      label: const Text('Browse and download local models'),
-                    ),
-                  if (_kind == AiProviderKind.compatible)
-                    const Text(
-                      'Compatible servers choose their own model IDs. Discover models or edit the defaults for your server.',
-                    ),
-                  if (_kind != AiProviderKind.offline) ...[
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('Server endpoint'),
-                      subtitle: Text(_url.text),
-                    ),
-                    ExpansionTile(
-                      title: const Text('Advanced profile configuration'),
-                      children: [
-                        _field(
-                          _url,
-                          'Base URL (blank uses provider default)',
-                          rebuild: true,
-                          validator: (_) {
-                            try {
-                              _profile();
-                              return null;
-                            } catch (_) {
-                              return 'Enter a valid HTTPS URL (localhost may use HTTP). Compatible APIs require a URL.';
+                        ),
+                        _field(_name, 'Profile name', required: true),
+                        DropdownButtonFormField<AiProviderKind>(
+                          key: ValueKey(_kind),
+                          initialValue: _kind,
+                          isExpanded: true,
+                          decoration: const InputDecoration(
+                            labelText: 'Provider',
+                          ),
+                          items: AiProviderKind.values
+                              .map(
+                                (k) => DropdownMenuItem(
+                                  value: k,
+                                  child: Text(aiProviderLabel(k)),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: (v) {
+                            setState(() => _changeKind(v!));
+                            if (v == AiProviderKind.offline) {
+                              _run(() async {
+                                await _ensureLocal();
+                              });
                             }
                           },
                         ),
-                        _field(
-                          _model,
-                          'Custom model ID',
-                          required: true,
-                          rebuild: true,
-                        ),
-                      ],
-                    ),
-                    _field(
-                      _secret,
-                      'API key / bearer token (blank keeps saved credential)',
-                      secret: true,
-                    ),
-                    const Text(
-                      'Changing provider or URL clears the old credential. Enter a new key for the new destination.',
-                    ),
-                    CheckboxListTile(
-                      value: _clearSecret,
-                      onChanged: (v) => setState(() => _clearSecret = v!),
-                      title: const Text('Remove saved credential'),
-                    ),
-                    Wrap(
-                      spacing: 8,
-                      children: [
-                        OutlinedButton(
-                          onPressed: () => _check(false),
-                          child: const Text('Test connection'),
-                        ),
-                        OutlinedButton(
-                          onPressed: () => _check(true),
-                          child: const Text('Discover models'),
-                        ),
-                      ],
-                    ),
-                  ],
-                  const SizedBox(height: 24),
-                  const Text('Behavior'),
-                  if (caps.thinking)
-                    SwitchListTile(
-                      value: _thinking,
-                      title: const Text('Enable model thinking'),
-                      subtitle: const Text(
-                        'Ollama reasoning can delay the answer. Chat waits for completion without the shared output token cap. Off for faster everyday chat.',
-                      ),
-                      onChanged: (v) => setState(() => _thinking = v),
-                    ),
-                  if (caps.temperature) ...[
-                    Text(
-                      'Temperature: ${(double.tryParse(_temperature.text) ?? .7).clamp(0, caps.maxTemperature ?? 2).toStringAsFixed(1)}',
-                    ),
-                    Slider(
-                      value: (double.tryParse(_temperature.text) ?? .7)
-                          .clamp(0, caps.maxTemperature ?? 2)
-                          .toDouble(),
-                      min: 0,
-                      max: caps.maxTemperature ?? 2,
-                      divisions: 20,
-                      onChanged: (value) => setState(
-                        () => _temperature.text = value.toStringAsFixed(2),
-                      ),
-                    ),
-                  ],
-                  if (caps.outputTokenLimit)
-                    _tokenPicker(_output, 'Maximum output tokens', [
-                      512,
-                      1024,
-                      2048,
-                      4096,
-                      8192,
-                      16384,
-                    ]),
-                  if (caps.contextWindow)
-                    _tokenPicker(_context, 'Context window tokens', [
-                      2048,
-                      4096,
-                      8192,
-                      16384,
-                      32768,
-                    ]),
-                  TextButton(
-                    onPressed: () => setState(_behaviorDefaults),
-                    child: const Text('Apply provider defaults'),
-                  ),
-                  _field(_instructions, 'Custom instructions', lines: 4),
-                  const Text(
-                    'Custom instructions remain subject to DayArk permissions.',
-                  ),
-                  DropdownButtonFormField<String>(
-                    key: ValueKey('input:${_inputLanguage.text}'),
-                    initialValue: _inputLanguage.text,
-                    decoration: const InputDecoration(
-                      labelText: 'Input language',
-                    ),
-                    items:
-                        {
-                              '': 'Automatic',
-                              'English': 'English',
-                              'Urdu': 'Urdu',
-                              'Roman Urdu': 'Roman Urdu',
-                              if (_inputLanguage.text.isNotEmpty)
-                                _inputLanguage.text: _inputLanguage.text,
-                            }.entries
-                            .map(
-                              (e) => DropdownMenuItem(
-                                value: e.key,
-                                child: Text(e.value),
-                              ),
-                            )
-                            .toList(),
-                    onChanged: (v) => setState(() => _inputLanguage.text = v!),
-                  ),
-                  DropdownButtonFormField<String>(
-                    key: ValueKey(_language),
-                    initialValue: _language,
-                    decoration: const InputDecoration(
-                      labelText: 'Response language',
-                    ),
-                    items: _languages
-                        .map((l) => DropdownMenuItem(value: l, child: Text(l)))
-                        .toList(),
-                    onChanged: (v) => setState(() => _language = v!),
-                  ),
-                  if (_language == 'Custom')
-                    _field(
-                      _customLanguage,
-                      'Custom response language',
-                      required: true,
-                    ),
-                  const SizedBox(height: 24),
-                  const Text('Privacy'),
-                  SwitchListTile(
-                    value: _online,
-                    onChanged: (v) => setState(() => _online = v),
-                    title: const Text('Allow online processing'),
-                    subtitle: const Text(
-                      'Authorize sending conversation content to the selected online or self-hosted provider.',
-                    ),
-                  ),
-                  SwitchListTile(
-                    value: _private,
-                    onChanged: (v) => setState(() => _private = v),
-                    title: const Text('Allow private context online'),
-                    subtitle: const Text(
-                      'Also authorize private retrieved content when online processing is enabled. Off by default.',
-                    ),
-                  ),
-                  FilledButton(
-                    onPressed: _store == null ? null : _save,
-                    child: const Text('Save settings'),
-                  ),
-                  if (_id != null)
-                    TextButton(
-                      onPressed: () => _run(() async {
-                        final id = _id!;
-                        final value = AiPreferences(
-                          profiles: _preferences.profiles.where(
-                            (p) => p.id != id,
+                        const SizedBox(height: 12),
+                        ListTile(
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            side: BorderSide(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .outlineVariant,
+                            ),
                           ),
-                          settings: _preferences.settings,
-                          allowOnlineProcessing: _online,
-                          allowPrivateContextOnline: _private,
-                        );
-                        await _store!.save(value);
-                        await _store!.deleteCredential(id);
-                        if (mounted) {
-                          setState(() {
-                            _preferences = value;
-                            _select(null);
-                            _status = 'Profile deleted.';
-                          });
-                        }
-                      }),
-                      child: const Text('Delete profile'),
+                          leading: const Icon(Icons.auto_awesome_outlined),
+                          title: const Text('Model'),
+                          subtitle: Text(_modelLabel(_model.text)),
+                          trailing: const Icon(Icons.unfold_more_rounded),
+                          onTap: () async {
+                            final model = await showAiChoicePicker(
+                              context,
+                              title: 'Choose a model',
+                              selected: _model.text,
+                              choices: [
+                                for (final id in _modelChoices)
+                                  AiChoice(
+                                    id,
+                                    _modelLabel(id),
+                                    subtitle: aiProviderLabel(_kind),
+                                  ),
+                              ],
+                            );
+                            if (mounted && model != null) {
+                              setState(() => _model.text = model);
+                            }
+                          },
+                        ),
+                        if (_kind == AiProviderKind.offline)
+                          TextButton.icon(
+                            onPressed: _openManager,
+                            icon: const Icon(Icons.download),
+                            label: const Text(
+                              'Browse and download local models',
+                            ),
+                          ),
+                        if (_kind == AiProviderKind.compatible)
+                          const Text(
+                            'Compatible servers choose their own model IDs. Discover models or edit the defaults for your server.',
+                          ),
+                        if (_kind != AiProviderKind.offline) ...[
+                          ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            title: const Text('Server endpoint'),
+                            subtitle: Text(_url.text),
+                          ),
+                          ExpansionTile(
+                            title: const Text('Advanced profile configuration'),
+                            children: [
+                              _field(
+                                _url,
+                                'Base URL (blank uses provider default)',
+                                rebuild: true,
+                                validator: (_) {
+                                  try {
+                                    _profile();
+                                    return null;
+                                  } catch (_) {
+                                    return 'Enter a valid HTTPS URL (localhost may use HTTP). Compatible APIs require a URL.';
+                                  }
+                                },
+                              ),
+                              _field(
+                                _model,
+                                'Custom model ID',
+                                required: true,
+                                rebuild: true,
+                              ),
+                            ],
+                          ),
+                          _field(
+                            _secret,
+                            'API key / bearer token (blank keeps saved credential)',
+                            secret: true,
+                          ),
+                          const Text(
+                            'Changing provider or URL clears the old credential. Enter a new key for the new destination.',
+                          ),
+                          CheckboxListTile(
+                            value: _clearSecret,
+                            onChanged: (v) => setState(() => _clearSecret = v!),
+                            title: const Text('Remove saved credential'),
+                          ),
+                          Wrap(
+                            spacing: 8,
+                            children: [
+                              OutlinedButton(
+                                onPressed: () => _check(false),
+                                child: const Text('Test connection'),
+                              ),
+                              OutlinedButton(
+                                onPressed: () => _check(true),
+                                child: const Text('Discover models'),
+                              ),
+                            ],
+                          ),
+                        ],
+                        const SizedBox(height: 24),
+                      ],
                     ),
-                ],
+                    _section(
+                      2,
+                      'Personalization',
+                      'Make DayArk respond the way you prefer.',
+                      Icons.tune_rounded,
+                      [
+                        if (caps.thinking)
+                          SwitchListTile(
+                            value: _thinking,
+                            title: const Text('Enable model thinking'),
+                            subtitle: const Text(
+                              'Ollama reasoning can delay the answer. Chat waits for completion without the shared output token cap. Off for faster everyday chat.',
+                            ),
+                            onChanged: (v) => setState(() => _thinking = v),
+                          ),
+                        if (caps.temperature) ...[
+                          Text(
+                            'Temperature: ${(double.tryParse(_temperature.text) ?? .7).clamp(0, caps.maxTemperature ?? 2).toStringAsFixed(1)}',
+                          ),
+                          Slider(
+                            value: (double.tryParse(_temperature.text) ?? .7)
+                                .clamp(0, caps.maxTemperature ?? 2)
+                                .toDouble(),
+                            min: 0,
+                            max: caps.maxTemperature ?? 2,
+                            divisions: 20,
+                            onChanged: (value) => setState(
+                              () =>
+                                  _temperature.text = value.toStringAsFixed(2),
+                            ),
+                          ),
+                        ],
+                        if (_kind == AiProviderKind.ollama ||
+                            _kind == AiProviderKind.offline)
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 8),
+                            child: Text(
+                              'Local output follows the model until it finishes or you press Stop. The shared output cap applies to online providers.',
+                            ),
+                          ),
+                        if (caps.outputTokenLimit &&
+                            _kind != AiProviderKind.ollama &&
+                            _kind != AiProviderKind.offline)
+                          _tokenPicker(_output, 'Maximum output tokens', [
+                            512,
+                            1024,
+                            2048,
+                            4096,
+                            8192,
+                            16384,
+                          ]),
+                        if (caps.contextWindow)
+                          _tokenPicker(_context, 'Context window tokens', [
+                            2048,
+                            4096,
+                            8192,
+                            16384,
+                            32768,
+                          ]),
+                        TextButton(
+                          onPressed: () => setState(_behaviorDefaults),
+                          child: const Text('Apply provider defaults'),
+                        ),
+                        _field(_instructions, 'Custom instructions', lines: 4),
+                        const Text(
+                          'Custom instructions remain subject to DayArk permissions.',
+                        ),
+                        DropdownButtonFormField<String>(
+                          key: ValueKey('input:${_inputLanguage.text}'),
+                          initialValue: _inputLanguage.text,
+                          decoration: const InputDecoration(
+                            labelText: 'Input language',
+                          ),
+                          items:
+                              {
+                                    '': 'Automatic',
+                                    'English': 'English',
+                                    'Urdu': 'Urdu',
+                                    'Roman Urdu': 'Roman Urdu',
+                                    if (_inputLanguage.text.isNotEmpty)
+                                      _inputLanguage.text: _inputLanguage.text,
+                                  }.entries
+                                  .map(
+                                    (e) => DropdownMenuItem(
+                                      value: e.key,
+                                      child: Text(e.value),
+                                    ),
+                                  )
+                                  .toList(),
+                          onChanged: (v) =>
+                              setState(() => _inputLanguage.text = v!),
+                        ),
+                        DropdownButtonFormField<String>(
+                          key: ValueKey(_language),
+                          initialValue: _language,
+                          decoration: const InputDecoration(
+                            labelText: 'Response language',
+                          ),
+                          items: _languages
+                              .map(
+                                (l) =>
+                                    DropdownMenuItem(value: l, child: Text(l)),
+                              )
+                              .toList(),
+                          onChanged: (v) => setState(() => _language = v!),
+                        ),
+                        if (_language == 'Custom')
+                          _field(
+                            _customLanguage,
+                            'Custom response language',
+                            required: true,
+                          ),
+                        const SizedBox(height: 24),
+                      ],
+                    ),
+                    _section(
+                      3,
+                      'Data & privacy',
+                      'You control what stays on this device and what is shared.',
+                      Icons.lock_outline,
+                      [
+                        SwitchListTile(
+                          value: _online,
+                          onChanged: (v) => setState(() => _online = v),
+                          title: const Text('Allow online processing'),
+                          subtitle: const Text(
+                            'Authorize sending conversation content to the selected online or self-hosted provider.',
+                          ),
+                        ),
+                        SwitchListTile(
+                          value: _private,
+                          onChanged: (v) => setState(() => _private = v),
+                          title: const Text('Allow private context online'),
+                          subtitle: const Text(
+                            'Also authorize private retrieved content when online processing is enabled. Off by default.',
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (_id != null)
+                      TextButton(
+                        onPressed: () => _run(() async {
+                          final id = _id!;
+                          final value = AiPreferences(
+                            profiles: _preferences.profiles.where(
+                              (p) => p.id != id,
+                            ),
+                            settings: _preferences.settings,
+                            allowOnlineProcessing: _online,
+                            allowPrivateContextOnline: _private,
+                          );
+                          await _store!.save(value);
+                          await _store!.deleteCredential(id);
+                          if (mounted) {
+                            setState(() {
+                              _preferences = value;
+                              _select(null);
+                              _status = 'Profile deleted.';
+                            });
+                          }
+                        }),
+                        child: const Text('Delete profile'),
+                      ),
+                  ],
+                ),
               ),
             ),
           ),

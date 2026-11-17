@@ -226,6 +226,10 @@ class AiHttpTransport {
       AiErrorCode.providerUnavailable,
       'AI endpoint or model was not found.',
     ),
+    413 => const AiException(
+      AiErrorCode.invalidRequest,
+      'The provider rejected the input because it exceeds its size limit. Please use a smaller file or message, or summarize the text in parts.',
+    ),
     408 || 504 => const AiException(
       AiErrorCode.timeout,
       'AI provider timed out.',

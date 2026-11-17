@@ -14,14 +14,14 @@ void validateAiAttachment(AiAttachment a) {
   if (data == null || data.isEmpty || data.length > aiMaxAttachmentBytes) {
     throw const AiException(
       AiErrorCode.invalidRequest,
-      'Attachments must contain at most 8 MiB of local file data.',
+      'This attachment is empty or exceeds 8 MiB. Please use a smaller, non-empty file.',
     );
   }
   if (isAiTextDocument(a)) {
     if (data.length > 256 * 1024) {
       throw const AiException(
         AiErrorCode.invalidRequest,
-        'Text documents are limited to 256 KiB.',
+        'This text file exceeds the 256 KiB file limit. Please use a smaller file or split it into parts.',
       );
     }
     try {
@@ -63,7 +63,7 @@ List<AiMessage> prepareAiAttachments(Iterable<AiMessage> messages) {
       if (bytes > aiMaxRequestAttachmentBytes) {
         throw const AiException(
           AiErrorCode.invalidRequest,
-          'Conversation attachments exceed the 16 MiB request limit.',
+          'Conversation attachments exceed the 16 MiB request limit. Please use fewer or smaller files, or start a new chat.',
         );
       }
       if (m.role == AiRole.system) {

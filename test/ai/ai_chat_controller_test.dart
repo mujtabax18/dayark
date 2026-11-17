@@ -100,6 +100,52 @@ void main() {
     await store.close();
   });
   AiMessage user(String text) => AiMessage(role: AiRole.user, text: text);
+  test(
+    'complete local thoughts are retained without entering answer history',
+    () async {
+      chat.dispose();
+      final thoughts = '**Thinking** ${'a long model thought ' * 5000}';
+      final captured = <List<AiMessage>>[];
+      chat = AiChatController(
+        store: store,
+        engine:
+            ({
+              required message,
+              required history,
+              required profileId,
+              required cancellationToken,
+            }) async* {
+              captured.add(history.toList());
+              yield AiStreamEvent.activity(thinking: thoughts);
+              yield AiStreamEvent.completed(
+                AiResponse(
+                  selection: AiModelSelection(
+                    providerId: 'local',
+                    modelId: 'small',
+                  ),
+                  message: AiMessage(role: AiRole.assistant, text: ''),
+                  thinkingOnly: true,
+                ),
+              );
+            },
+      );
+      await chat.send(
+        AiMessage(role: AiRole.user, text: 'Question one'),
+        profileId: 'local',
+      );
+      expect(
+        (await store.get(chat.active!.id))!.messages.last.thinking,
+        thoughts,
+      );
+      await chat.send(
+        AiMessage(role: AiRole.user, text: 'Question two'),
+        profileId: 'local',
+      );
+      expect(captured.last.map((m) => m.text), ['Question one']);
+      expect(chat.active!.messages.last.state, AiChatMessageState.complete);
+    },
+  );
+
   test('a delayed selection cannot reopen a chat after New chat', () async {
     await chat.send(user('First'), profileId: 'offline');
     final id = chat.active!.id;

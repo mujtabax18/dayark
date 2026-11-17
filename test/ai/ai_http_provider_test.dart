@@ -88,6 +88,30 @@ void main() {
     ],
   );
   test(
+    'known Ollama vision models expose images while text models stay text-only',
+    () {
+      final provider = OllamaProvider(baseUrl: base);
+      addTearDown(provider.close);
+      for (final model in [
+        'qwen3.5:2b',
+        'qwen3-vl:2b',
+        'gemma4:e4b',
+        'llava:7b',
+      ]) {
+        expect(
+          provider.capabilitiesFor(model).attachments,
+          contains(AiAttachmentKind.image),
+        );
+      }
+      expect(
+        provider.capabilitiesFor('qwen3:2b').attachments,
+        isNot(contains(AiAttachmentKind.image)),
+      );
+      expect(provider.capabilitiesFor('unknown-model').attachments, isEmpty);
+    },
+  );
+
+  test(
     'current Claude profiles omit rejected sampling overrides on the wire',
     () async {
       final provider = AnthropicProvider(
@@ -279,7 +303,7 @@ void main() {
       expect(calls.single.headers.value('authorization'), 'Bearer test-secret');
       expect(calls.single.body!['options'], {
         'temperature': 0.5,
-        'num_predict': 32,
+        'num_predict': -1,
         'num_ctx': 2048,
       });
     },

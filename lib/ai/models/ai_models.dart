@@ -37,7 +37,9 @@ class AiMessage {
     this.containsPrivateContext = false,
     Iterable<AiAttachment> attachments = const [],
   }) : attachments = List.unmodifiable(attachments) {
-    if (text.trim().isEmpty && this.attachments.isEmpty) {
+    if (role != AiRole.assistant &&
+        text.trim().isEmpty &&
+        this.attachments.isEmpty) {
       throw ArgumentError('A message needs text or an attachment.');
     }
   }
@@ -71,7 +73,15 @@ class AiResponse {
     required this.message,
     this.usage = const AiUsage(),
     this.finishReason,
+    this.thinkingOnly = false,
   }) {
+    if (message.text.trim().isEmpty &&
+        message.attachments.isEmpty &&
+        !thinkingOnly) {
+      throw ArgumentError(
+        'An empty assistant response must be explicitly marked thinking-only.',
+      );
+    }
     if (message.role != AiRole.assistant) {
       throw ArgumentError('An AI response must be an assistant message.');
     }
@@ -80,4 +90,7 @@ class AiResponse {
   final AiMessage message;
   final AiUsage usage;
   final String? finishReason;
+
+  /// A terminal response with streamed reasoning but no final answer.
+  final bool thinkingOnly;
 }
