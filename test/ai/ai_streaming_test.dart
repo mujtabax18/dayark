@@ -4,6 +4,9 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:metersystem/ai/settings/ai_flutter_settings.dart';
 import 'package:metersystem/ai/ai.dart';
 import 'package:metersystem/ai/providers/http/http_ai_provider.dart';
 import 'package:metersystem/ai/core/ai_attachments.dart';
@@ -57,6 +60,10 @@ class ActiveThinkingProvider extends WaitingProvider {
 }
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  // These adapter tests exercise real loopback HTTP rather than the widget
+  // binding's synthetic HTTP 400 client.
+  HttpOverrides.global = null;
   late HttpServer server;
   late Uri base;
   var responseText = '', status = 200, calls = 0;
@@ -137,6 +144,121 @@ void main() {
     );
   });
 
+  test(
+    'local streams can wait beyond startup and idle limits and still stop',
+    () async {
+      final provider = ActiveThinkingProvider();
+      final gateway = AiGateway(
+        providers: [provider],
+        retryPolicy: AiRetryPolicy(
+          waitForLocalStream: true,
+          initialStreamTimeout: const Duration(milliseconds: 5),
+          streamInactivityTimeout: const Duration(milliseconds: 5),
+        ),
+      );
+      final req = AiRequest(
+        selection: AiModelSelection(providerId: provider.id, modelId: 'model'),
+        messages: [AiMessage(role: AiRole.user, text: 'Hello')],
+      );
+      expect((await gateway.stream(req).last).response!.message.text, 'Ready');
+      expect(AiRetryPolicy.localInference().waitForLocalStream, isTrue);
+
+      final waiting = WaitingProvider();
+      final token = AiCancellationToken();
+      final pending = AiGateway(
+        providers: [waiting],
+        retryPolicy: AiRetryPolicy.localInference(),
+      ).stream(req, cancellationToken: token).toList();
+      final check = expectLater(
+        pending,
+        throwsA(
+          isA<AiException>().having(
+            (e) => e.code,
+            'code',
+            AiErrorCode.cancelled,
+          ),
+        ),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      token.cancel();
+      await check;
+      expect(waiting.starts, 1);
+    },
+  );
+
+  test('thinking and answer in the same Ollama frame are both delivered', () async {
+    final p = OllamaProvider(baseUrl: base);
+    addTearDown(p.close);
+    responseText =
+        '${jsonEncode({
+          'message': {'role': 'assistant', 'thinking': 'Checking', 'content': 'Ready'},
+          'done': true,
+        })}\n';
+    final events = await channel(p).stream(request(p)).toList();
+    expect(events.where((e) => e.isActivity).single.thinking, 'Checking');
+    expect(events.last.response!.message.text, 'Ready');
+  });
+
+  test('thinking that ends at a provider limit explains the missing answer', () async {
+    final p = OllamaProvider(baseUrl: base);
+    addTearDown(p.close);
+    responseText =
+        '${jsonEncode({
+          'message': {'role': 'assistant', 'thinking': 'Checking', 'content': ''},
+          'done': true,
+          'done_reason': 'length',
+          'eval_count': 2048,
+        })}\n';
+    await expectLater(
+      channel(p).stream(request(p)).toList(),
+      throwsA(
+        isA<AiException>().having(
+          (e) => e.message,
+          'message',
+          contains('generation limit'),
+        ),
+      ),
+    );
+  });
+
+  test('saved shared output cap does not truncate configured Ollama chat', () async {
+    SharedPreferences.setMockInitialValues({});
+    FlutterSecureStorage.setMockInitialValues({});
+    final store = AiSettingsStore(
+      preferences: await SharedPreferences.getInstance(),
+    );
+    await store.save(
+      AiPreferences(
+        profiles: [
+          AiProviderProfile(
+            id: 'local-qwen',
+            name: 'Local Qwen',
+            kind: AiProviderKind.ollama,
+            modelId: 'qwen3.5:2b',
+            baseUrl: base.toString(),
+          ),
+        ],
+        selectedProfileId: 'local-qwen',
+        allowOnlineProcessing: true,
+        settings: AiSettings(maxOutputTokens: 2048, thinking: true),
+      ),
+    );
+    responseText =
+        '${jsonEncode({
+          'message': {'role': 'assistant', 'thinking': 'Checking', 'content': 'Ready'},
+          'done': true,
+        })}\n';
+    final events = await AiConfiguredAssistant(store)
+        .stream(
+          message: AiMessage(role: AiRole.user, text: 'Hello'),
+        )
+        .toList();
+    expect(events.last.response!.message.text, 'Ready');
+    expect(bodies.single['options']['num_predict'], -1);
+    expect(bodies.single['think'], isTrue);
+    expect(store.load().settings.maxOutputTokens, 2048);
+  });
+
   test('Ollama thinking is opt-in and hidden reasoning emits activity instead of a false timeout', () async {
     final p = OllamaProvider(baseUrl: base);
     addTearDown(p.close);
@@ -166,6 +288,7 @@ void main() {
         .stream(request(p, model: 'qwen3.5:2b'))
         .toList();
     expect(bodies.last['think'], isFalse);
+    expect(bodies.last['options']['num_predict'], -1);
     expect(events.where((e) => e.isActivity), hasLength(2));
     expect(
       events.where((e) => e.isActivity).map((e) => e.thinking).join(),

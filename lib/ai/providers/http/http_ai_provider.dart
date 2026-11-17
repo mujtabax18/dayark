@@ -300,8 +300,7 @@ abstract class HttpAiProvider
           'options': {
             if (settings.temperature != null)
               'temperature': settings.temperature,
-            if (settings.maxOutputTokens != null)
-              'num_predict': settings.maxOutputTokens,
+            'num_predict': settings.maxOutputTokens ?? -1,
             if (settings.contextWindowTokens != null)
               'num_ctx': settings.contextWindowTokens,
           },
@@ -477,11 +476,12 @@ abstract class HttpAiProvider
             output = aiTokenCount(event['eval_count']);
           }
       }
+      if (activity) {
+        yield AiStreamEvent.activity(thinking: thinking);
+      }
       if (delta.isNotEmpty) {
         buffer.write(delta);
         yield AiStreamEvent.delta(delta);
-      } else if (activity) {
-        yield AiStreamEvent.activity(thinking: thinking);
       }
     }
     if (terminal && buffer.toString().trim().isEmpty) {
@@ -491,6 +491,13 @@ abstract class HttpAiProvider
             'Finish reason: ${finish ?? 'not provided'}\n'
             'Input tokens: ${input ?? 'not provided'}\n'
             'Output tokens: ${output ?? 'not provided'}',
+      );
+    }
+    if (terminal && buffer.toString().trim().isEmpty && finish == 'length') {
+      throw const AiException(
+        AiErrorCode.invalidResponse,
+        'The model reached its generation limit before producing an answer. '
+        'Increase the model’s limit or disable thinking and retry.',
       );
     }
     if (!terminal || buffer.toString().trim().isEmpty) {

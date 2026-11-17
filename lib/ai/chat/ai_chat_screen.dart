@@ -573,6 +573,27 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen>
               style: Theme.of(context).textTheme.labelMedium,
             ),
             const SizedBox(height: 8),
+            if (last && _chat!.thinkingText.isNotEmpty)
+              Material(
+                key: ValueKey('thinking-${m.id}'),
+                color: Colors.transparent,
+                child: ExpansionTile(
+                  tilePadding: EdgeInsets.zero,
+                  title: Text(
+                    _chat!.activity == 'Thinking…'
+                        ? 'Thinking…'
+                        : 'Model thinking',
+                  ),
+                  children: [
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 240),
+                      child: SingleChildScrollView(
+                        child: SelectableText(_chat!.thinkingText),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             if (m.state == AiChatMessageState.pending && m.message.text == '…')
               Row(
                 mainAxisSize: MainAxisSize.min,
@@ -842,6 +863,20 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen>
                                   },
                           ),
                         ),
+                        if (_profile?.kind == AiProviderKind.ollama ||
+                            _profile?.kind == AiProviderKind.offline)
+                          Tooltip(
+                            triggerMode: TooltipTriggerMode.tap,
+                            message:
+                                'Local model speed depends on the system running it. '
+                                'Loading, thinking and responding can take several minutes. '
+                                'DayArk waits until it finishes or you press Stop. '
+                                'For faster responses, choose a lighter model; answer quality may be lower.',
+                            child: const Padding(
+                              padding: EdgeInsets.all(12),
+                              child: Icon(Icons.info_outline),
+                            ),
+                          ),
                         IconButton(
                           tooltip: 'New chat',
                           onPressed: chat.busy

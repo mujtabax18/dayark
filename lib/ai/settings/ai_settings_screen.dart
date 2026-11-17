@@ -429,6 +429,9 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
         initialValue: selected,
         decoration: InputDecoration(
           labelText: label,
+          helperText: controller == _output && _kind == AiProviderKind.ollama
+              ? 'Ollama chat waits for completion and does not apply this cap.'
+              : null,
           border: const OutlineInputBorder(),
         ),
         items: values
@@ -664,7 +667,7 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
                       value: _thinking,
                       title: const Text('Enable model thinking'),
                       subtitle: const Text(
-                        'Ollama reasoning can delay the answer and uses the output token budget. Off for faster everyday chat.',
+                        'Ollama reasoning can delay the answer. Chat waits for completion without the shared output token cap. Off for faster everyday chat.',
                       ),
                       onChanged: (v) => setState(() => _thinking = v),
                     ),

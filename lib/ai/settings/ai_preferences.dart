@@ -155,8 +155,9 @@ class AiPreferences {
 /// Retain stored values across switches, but send only parameters supported by the model.
 AiSettings settingsForCapabilities(
   AiSettings settings,
-  AiCapabilities capabilities,
-) => AiSettings(
+  AiCapabilities capabilities, {
+  bool applyOutputLimit = true,
+}) => AiSettings(
   temperature: capabilities.temperature
       ? (capabilities.maxTemperature != null && settings.temperature != null
             ? settings.temperature!
@@ -164,7 +165,7 @@ AiSettings settingsForCapabilities(
                   .toDouble()
             : settings.temperature)
       : null,
-  maxOutputTokens: capabilities.outputTokenLimit
+  maxOutputTokens: applyOutputLimit && capabilities.outputTokenLimit
       ? settings.maxOutputTokens
       : null,
   contextWindowTokens: capabilities.contextWindow

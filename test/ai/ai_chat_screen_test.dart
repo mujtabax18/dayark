@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -86,7 +88,11 @@ void main() {
           ),
         );
       };
-  Future<void> open(WidgetTester tester, {bool mobile = false}) async {
+  Future<void> open(
+    WidgetTester tester, {
+    bool mobile = false,
+    AiChatStream? engine,
+  }) async {
     tester.view.physicalSize = mobile
         ? const Size(390, 844)
         : const Size(1200, 1000);
@@ -99,7 +105,7 @@ void main() {
           home: AiChatScreen(
             store: chats,
             settings: settings,
-            engine: getEngine(),
+            engine: engine ?? getEngine(),
             sync: () async => 'Test sync complete.',
           ),
         ),
@@ -118,6 +124,61 @@ void main() {
     await tester.tap(find.byTooltip('Send message'));
     await tester.pumpAndSettle();
   }
+
+  testWidgets('local chat shows live thinking, then streams the answer', (
+    tester,
+  ) async {
+    final finishThinking = Completer<void>();
+    await open(
+      tester,
+      engine:
+          ({
+            required message,
+            required history,
+            required profileId,
+            required cancellationToken,
+          }) async* {
+            yield const AiStreamEvent.activity(
+              thinking: 'Checking the question',
+            );
+            await finishThinking.future;
+            yield const AiStreamEvent.delta('Ready');
+            yield AiStreamEvent.completed(
+              AiResponse(
+                selection: AiModelSelection(
+                  providerId: profileId!,
+                  modelId: 'small',
+                ),
+                message: AiMessage(role: AiRole.assistant, text: 'Ready'),
+              ),
+            );
+          },
+    );
+    await tester.tap(find.byIcon(Icons.info_outline));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('answer quality may be lower'), findsOneWidget);
+    await tester.enterText(
+      find.byWidgetPredicate(
+        (w) => w is TextField && w.decoration?.hintText == 'Message DayArk…',
+      ),
+      'Question',
+    );
+    await tester.tap(find.byTooltip('Send message'));
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(find.text('Thinking…'), findsWidgets);
+    await tester.tap(find.byType(ExpansionTile));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('Checking the question'), findsOneWidget);
+    finishThinking.complete();
+    await tester.pumpAndSettle();
+    expect(find.text('Ready'), findsOneWidget);
+    expect(find.text('Model thinking'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpAndSettle();
+  });
 
   testWidgets(
     'chat renders Markdown/code safely and switches models without losing conversation',

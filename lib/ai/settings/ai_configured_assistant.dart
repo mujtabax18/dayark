@@ -90,6 +90,9 @@ class AiConfiguredAssistant {
         settings: settingsForCapabilities(
           preferences.settings,
           provider.capabilitiesFor(profile.modelId),
+          // Reasoning and the answer share Ollama's prediction budget. Let
+          // local chat finish naturally; Stop remains available.
+          applyOutputLimit: profile.kind != AiProviderKind.ollama,
         ),
         allowRemoteProcessing: preferences.allowOnlineProcessing,
         containsPrivateContext: containsPrivateContext,

@@ -7,7 +7,7 @@ import 'ai_error.dart';
 Future<T> runAiOperation<T>(
   Future<T> Function(AiCancellationToken) operation,
   AiCancellationToken caller,
-  Duration timeout,
+  Duration? timeout,
 ) async {
   caller.throwIfCancelled();
   final attempt = AiCancellationToken();
@@ -20,18 +20,20 @@ Future<T> runAiOperation<T>(
       attempt.cancel();
     }
   });
-  final timer = Timer(timeout, () {
-    if (!result.isCompleted) {
-      result.completeError(
-        const AiException(
-          AiErrorCode.timeout,
-          'AI provider timed out.',
-          retryable: true,
-        ),
-      );
-      attempt.cancel();
-    }
-  });
+  final timer = timeout == null
+      ? null
+      : Timer(timeout, () {
+          if (!result.isCompleted) {
+            result.completeError(
+              const AiException(
+                AiErrorCode.timeout,
+                'AI provider timed out.',
+                retryable: true,
+              ),
+            );
+            attempt.cancel();
+          }
+        });
   Future<T>.sync(() => operation(attempt)).then(
     (value) {
       if (!result.isCompleted) result.complete(value);
@@ -45,7 +47,7 @@ Future<T> runAiOperation<T>(
     caller.throwIfCancelled();
     return value;
   } finally {
-    timer.cancel();
+    timer?.cancel();
     remove();
   }
 }

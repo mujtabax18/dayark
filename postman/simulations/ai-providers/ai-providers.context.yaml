@@ -39,10 +39,17 @@ assumptions:
     updated_at: '2026-11-17'
   - id: ollama-cold-start-and-thinking
     status: supported
-    claim: DayArk can request ordinary Qwen 3.5 2B chat with thinking disabled, allow local model startup, and treat thinking-only frames as activity without exposing reasoning text.
+    claim: DayArk can request ordinary Qwen 3.5 2B chat with thinking disabled, allow local model startup, and treat thinking-only frames as activity.
     reason: The installed local model reports thinking enabled by default. A raw synthetic request exhausted a 128-token budget in thinking with no answer; the fixed actual Dart gateway and adapter produced a complete greeting with think false. Independent timed and HTTP regression tests establish startup/idle separation, activity propagation and explicit thinking control.
     verification: On 2026-11-17, local Ollama api/show reported qwen3.5:2b thinking values false and true with default true. A synthetic default-thinking request emitted its first frame after 5.94 seconds and ended after 12.1 seconds with 128 tokens, thinking characters and empty answer. tool/ai/verify_ollama.dart qwen3.5:2b then returned a full greeting after 16.864 seconds through the updated adapter with think false. Local fixtures also exercised both thinking boolean values and hidden activity frames; the five-provider simulation was rerun for compatibility. No saved user conversations, vendor credentials or downloads were involved. Timings depend on model loading and hardware.
     source: tool/ai/verify_ollama.dart; test/ai/ai_streaming_test.dart; test/ai/ai_settings_test.dart; lib/ai/core/ai_gateway.dart; lib/ai/providers/http/http_ai_provider.dart; https://docs.ollama.com/capabilities/thinking
+    updated_at: '2026-11-17'
+  - id: ollama-chat-thinking-and-unbounded-wait
+    status: supported
+    claim: Configured Ollama chat omits the shared output cap, requests num_predict -1, exposes available thinking as activity, and local stream waits remain cancellable without startup or inactivity timers.
+    reason: Actual Dio adapter calls against synthetic loopback HTTP verify serialization and thinking/answer delivery, including both in one frame. Timed gateway fixtures verify waiting beyond configured limits and Stop. These results establish caller behavior, not that every installed model will terminate or produce an answer.
+    verification: On 2026-11-17, 51 targeted Flutter tests passed across streaming, controller, chat UI, settings and HTTP provider suites. The configured-assistant test saved a 2048-token cap and observed num_predict -1 on the actual HTTP request while preserving saved preferences. Widget tests expanded live thinking, checked the local performance tooltip, then observed the completed answer. Provider-limit fixtures verify a specific explanation when generation ends with length and no answer. Existing Postman mocks were not changed or rerun in this session; loopback HTTP fixtures provided the necessary thinking and length frames. No live inference was performed. Prior cold-start evidence above remains historical; reasoning is now accessible in the live thinking panel.
+    source: test/ai/ai_streaming_test.dart; test/ai/ai_chat_controller_test.dart; test/ai/ai_chat_screen_test.dart; lib/ai/settings/ai_configured_assistant.dart; lib/ai/providers/http/ai_http_transport.dart; https://github.com/ollama/ollama/blob/main/docs/modelfile.mdx
     updated_at: '2026-11-17'
 fingerprints:
   - id: part2-working-tree

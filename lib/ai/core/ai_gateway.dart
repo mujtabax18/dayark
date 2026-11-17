@@ -17,6 +17,7 @@ class AiRetryPolicy {
     this.maxAttempts = 3,
     this.initialDelay = const Duration(milliseconds: 250),
     this.attemptTimeout = const Duration(seconds: 60),
+    this.waitForLocalStream = false,
     Duration? initialStreamTimeout,
     Duration? streamInactivityTimeout,
   }) : initialStreamTimeout = initialStreamTimeout ?? attemptTimeout,
@@ -30,11 +31,15 @@ class AiRetryPolicy {
       throw ArgumentError('Invalid AI retry policy.');
     }
   }
+
+  /// Disable stream timers for local inference; caller cancellation still applies.
+  final bool waitForLocalStream;
   final int maxAttempts;
   final Duration initialDelay;
   final Duration attemptTimeout;
   final Duration initialStreamTimeout, streamInactivityTimeout;
   factory AiRetryPolicy.localInference() => AiRetryPolicy(
+    waitForLocalStream: true,
     initialStreamTimeout: const Duration(minutes: 5),
     streamInactivityTimeout: const Duration(minutes: 2),
   );
@@ -187,7 +192,9 @@ class AiGateway {
           return iterator.moveNext().whenComplete(detach);
         },
         token,
-        receivedEvent
+        retryPolicy.waitForLocalStream
+            ? null
+            : receivedEvent
             ? retryPolicy.streamInactivityTimeout
             : retryPolicy.initialStreamTimeout,
       )) {

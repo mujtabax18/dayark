@@ -32,6 +32,7 @@ class AiChatController extends ChangeNotifier {
   String query = '';
   String? folder, status;
   String? activity;
+  String thinkingText = '';
   AiCancellationToken? _token;
   bool _disposed = false;
   void _notify() {
@@ -80,6 +81,7 @@ class AiChatController extends ChangeNotifier {
       );
     }
     active = value;
+    thinkingText = '';
     status = null;
     _notify();
   }
@@ -87,6 +89,7 @@ class AiChatController extends ChangeNotifier {
   void newChat() {
     if (busy) return;
     active = null;
+    thinkingText = '';
     status = null;
     _notify();
   }
@@ -162,6 +165,7 @@ class AiChatController extends ChangeNotifier {
     busy = true;
     status = null;
     activity = 'Waiting for model…';
+    thinkingText = '';
     _token = AiCancellationToken();
     _notify();
     try {
@@ -222,9 +226,12 @@ class AiChatController extends ChangeNotifier {
         )) {
           _token!.throwIfCancelled();
           if (event.isActivity) {
-            activity = 'Model is working…';
+            activity = event.thinking?.isNotEmpty == true
+                ? 'Thinking…'
+                : 'Model is working…';
             if (event.thinking case final value? when value.isNotEmpty) {
               _appendBounded(thinking, value);
+              thinkingText = thinking.toString();
             }
             if (event.diagnostic case final value? when value.isNotEmpty) {
               _appendBounded(providerDiagnostics, value);
@@ -235,6 +242,7 @@ class AiChatController extends ChangeNotifier {
             complete = event.response;
           } else {
             buffer.write(event.text);
+            if (event.text.isNotEmpty) activity = 'Receiving response…';
           }
           if (buffer.isNotEmpty) {
             active = active!.copyWith(

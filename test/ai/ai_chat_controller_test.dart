@@ -31,6 +31,9 @@ void main() {
           }) async* {
             histories.add(history.toList());
             profiles.add(profileId);
+            yield const AiStreamEvent.activity(
+              thinking: 'Checking the question',
+            );
             yield const AiStreamEvent.delta('Hello ');
             if (!started.isCompleted) started.complete();
             if (hang) {
@@ -92,6 +95,9 @@ void main() {
     hang = true;
     final pending = chat.send(user('Original'), profileId: 'offline');
     await started.future;
+    expect(chat.thinkingText, 'Checking the question');
+    expect(chat.activity, 'Receiving response…');
+    expect(chat.busy, isTrue);
     chat.stop();
     await pending;
     expect(chat.active!.messages.last.state, AiChatMessageState.stopped);
