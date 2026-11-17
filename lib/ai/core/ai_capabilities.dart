@@ -7,10 +7,12 @@ class AiCapabilities {
     this.maxTemperature,
     this.outputTokenLimit = true,
     this.contextWindow = false,
+    this.thinking = false,
   }) : attachments = Set.unmodifiable(attachments);
   final Set<AiAttachmentKind> attachments;
   final bool temperature;
   final double? maxTemperature;
   final bool outputTokenLimit;
   final bool contextWindow;
+  final bool thinking;
 }

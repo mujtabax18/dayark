@@ -31,6 +31,7 @@ class AiChatController extends ChangeNotifier {
   bool busy = false, showArchived = false;
   String query = '';
   String? folder, status;
+  String? activity;
   AiCancellationToken? _token;
   bool _disposed = false;
   void _notify() {
@@ -160,6 +161,7 @@ class AiChatController extends ChangeNotifier {
     var accepted = false;
     busy = true;
     status = null;
+    activity = 'Waiting for model…';
     _token = AiCancellationToken();
     _notify();
     try {
@@ -215,6 +217,10 @@ class AiChatController extends ChangeNotifier {
           cancellationToken: _token!,
         )) {
           _token!.throwIfCancelled();
+          if (event.isActivity) {
+            activity = 'Model is working…';
+            _notify();
+          }
           if (event.response != null) {
             complete = event.response;
           } else {
@@ -290,6 +296,7 @@ class AiChatController extends ChangeNotifier {
       status = 'Unable to save this chat. Check storage and retry.';
     } finally {
       busy = false;
+      activity = null;
       _token = null;
       await refresh();
       _notify();

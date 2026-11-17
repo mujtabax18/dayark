@@ -17,17 +17,27 @@ class AiRetryPolicy {
     this.maxAttempts = 3,
     this.initialDelay = const Duration(milliseconds: 250),
     this.attemptTimeout = const Duration(seconds: 60),
-  }) {
+    Duration? initialStreamTimeout,
+    Duration? streamInactivityTimeout,
+  }) : initialStreamTimeout = initialStreamTimeout ?? attemptTimeout,
+       streamInactivityTimeout = streamInactivityTimeout ?? attemptTimeout {
     if (maxAttempts < 1 ||
         maxAttempts > 10 ||
         initialDelay.isNegative ||
-        attemptTimeout <= Duration.zero) {
+        attemptTimeout <= Duration.zero ||
+        this.initialStreamTimeout <= Duration.zero ||
+        this.streamInactivityTimeout <= Duration.zero) {
       throw ArgumentError('Invalid AI retry policy.');
     }
   }
   final int maxAttempts;
   final Duration initialDelay;
   final Duration attemptTimeout;
+  final Duration initialStreamTimeout, streamInactivityTimeout;
+  factory AiRetryPolicy.localInference() => AiRetryPolicy(
+    initialStreamTimeout: const Duration(minutes: 5),
+    streamInactivityTimeout: const Duration(minutes: 2),
+  );
 }
 
 /// The only communication path to AI providers. Does not access app data.
@@ -122,6 +132,7 @@ class AiGateway {
               !capabilities.outputTokenLimit) ||
           (settings.contextWindowTokens != null &&
               !capabilities.contextWindow) ||
+          (settings.thinking != null && !capabilities.thinking) ||
           request.messages
               .expand((m) => m.attachments)
               .any(
@@ -167,6 +178,7 @@ class AiGateway {
       ),
     );
     var completed = false;
+    var receivedEvent = false;
     final text = StringBuffer();
     try {
       while (await runAiOperation(
@@ -175,8 +187,11 @@ class AiGateway {
           return iterator.moveNext().whenComplete(detach);
         },
         token,
-        retryPolicy.attemptTimeout,
+        receivedEvent
+            ? retryPolicy.streamInactivityTimeout
+            : retryPolicy.initialStreamTimeout,
       )) {
+        receivedEvent = true;
         token.throwIfCancelled();
         final event = iterator.current;
         if (completed) {

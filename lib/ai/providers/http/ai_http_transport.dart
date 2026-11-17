@@ -145,6 +145,9 @@ class AiHttpTransport {
         cancelToken: cancel,
         options: Options(
           responseType: ResponseType.stream,
+          // Model loading can precede the first response frame. The gateway
+          // enforces provider-specific startup/inactivity limits and Stop.
+          receiveTimeout: const Duration(minutes: 5),
           headers: {
             'Content-Type': 'application/json',
             'Accept': ndjson ? 'application/x-ndjson' : 'text/event-stream',

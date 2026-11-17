@@ -31,6 +31,8 @@ extension AppSettingKeyX on AppSettingKey {
         return 'home_visible_quick_access';
       case AppSettingKey.familyTreeHomeShortcutMigrated:
         return 'family_tree_home_shortcut_migrated';
+      case AppSettingKey.aiChatHomeShortcutMigrated:
+        return 'ai_chat_home_shortcut_migrated';
       case AppSettingKey.homeQuoteVisible:
         return 'home_quote_visible';
       case AppSettingKey.showNavigationBar:

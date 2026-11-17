@@ -180,46 +180,37 @@ class UserSettingsController {
 
   Future<Set<int>> getHomeVisibleQuickAccess() async {
     final value = await repo.getValue(AppSettingKey.homeVisibleQuickAccess);
-    final migrationDone = await repo.getValue(
-      AppSettingKey.familyTreeHomeShortcutMigrated,
-    );
-
+    final additions = <int, AppSettingKey>{
+      14: AppSettingKey.familyTreeHomeShortcutMigrated,
+      15: AppSettingKey.aiChatHomeShortcutMigrated,
+    };
+    final pending = <int, AppSettingKey>{};
+    for (final entry in additions.entries) {
+      if (await repo.getValue(entry.value) != '1') {
+        pending[entry.key] = entry.value;
+      }
+    }
     if (value == null) {
-      // New installs already receive Family Trees through the defaults. Mark
-      // the migration complete so hiding it later remains a user preference.
-      if (migrationDone != '1') {
-        await repo.setValue(
-          AppSettingKey.familyTreeHomeShortcutMigrated,
-          '1',
-        );
+      for (final key in pending.values) {
+        await repo.setValue(key, '1');
       }
       return HomeLayoutSettings.defaultVisibleQuickAccessIds;
     }
-
-    var visibleIds = HomeLayoutSettings.normalizeVisibleQuickAccessIds(
-      _parseInts(value),
-    );
-
-    // Existing installs may already have a saved quick-access list from
-    // before Family Trees existed. Surface the new feature on Home once, then
-    // preserve any later hide/show choice made in Home customization.
-    if (migrationDone != '1') {
-      visibleIds = HomeLayoutSettings.normalizeVisibleQuickAccessIds({
-        ...visibleIds,
-        14,
-      });
-      await Future.wait([
-        repo.setValue(
-          AppSettingKey.homeVisibleQuickAccess,
-          _sortedInts(visibleIds).join(','),
-        ),
-        repo.setValue(
-          AppSettingKey.familyTreeHomeShortcutMigrated,
-          '1',
-        ),
-      ]);
+    final visibleIds = HomeLayoutSettings.normalizeVisibleQuickAccessIds({
+      ..._parseInts(value),
+      ...pending.keys,
+    });
+    if (pending.isNotEmpty) {
+      // Surface a newly introduced feature once, then respect later hide/show choices.
+      // Commit visibility before its migration markers so a failed write can retry.
+      await repo.setValue(
+        AppSettingKey.homeVisibleQuickAccess,
+        _sortedInts(visibleIds).join(','),
+      );
+      for (final key in pending.values) {
+        await repo.setValue(key, '1');
+      }
     }
-
     return visibleIds;
   }
 

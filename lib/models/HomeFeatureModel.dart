@@ -178,6 +178,14 @@ class HomeFeatureModel {
       position: 13,
       colorCode: 0xFF7C3AED,
     ),
+    HomeFeatureModel(
+      id: 15,
+      title: 'AI Chat',
+      route: RoutesStr.aiChat,
+      iconCode: 14,
+      position: 14,
+      colorCode: 0xFF6366F1,
+    ),
   ];
 
   static final Map<int, HomeFeatureModel> defaultFeaturesById =
@@ -199,4 +207,5 @@ const List<IconData> homeIconList = [
   Icons.document_scanner, // 11
   Icons.school_outlined, // 12 Tutorials
   Icons.account_tree_outlined, // 13 Family Trees
+  Icons.auto_awesome_outlined, // 14 AI Chat
 ];

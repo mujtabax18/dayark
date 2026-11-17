@@ -1,6 +1,7 @@
 # Part 5 — Chat system (steps 29–39)
 
-Open **AI Chat** from the desktop sidebar, **More → AI Chat**, or
+Open **AI Chat** from Home’s **Features** cards or quick access, the desktop
+**Features** sidebar, **More → AI Chat**, or
 **Settings → AI Chat**. Create a provider profile in AI settings first. The chat
 profile picker switches providers within the current conversation, retaining
 its successful user/assistant history. Changes to the chat's selected profile do
@@ -158,3 +159,49 @@ also passed the local Postman streaming/non-streaming simulation; request logs
 confirmed the actual adapter paths. Scoped AI/test/tool and new sync-handler
 analysis and `git diff --check` passed. Live providers and physical paired devices
 were not used.
+
+
+## Ollama cold-start and thinking fix — 2026-11-17
+
+Ollama and embedded local inference now allow five minutes for the first stream
+event and two minutes of inactivity between events. Other providers retain their
+existing default timeout. The HTTP stream's receive timeout allows the same
+cold-start window; the gateway still enforces its shorter per-provider idle
+limit and cancellation. Stop remains available while waiting for model loading.
+
+Ollama chat explicitly sends `think: false` by default. Qwen 3.5 enables thinking
+by default on the tested server, which could consume the output budget while
+DayArk was waiting for visible answer text. Supported Ollama reasoning models
+now expose **AI settings → Behavior → Enable model thinking**. Enabling it is
+opt-in; it can increase response latency and may require a larger output budget.
+Thinking-only Ollama frames emit activity events that keep a working stream
+alive without showing or storing reasoning text. Pending chat bubbles indicate
+that the model is being awaited or is working.
+
+AI Chat is registered as feature ID 15, so it participates in the normal Home
+feature ordering, feature cards, desktop Features list and quick-access
+customization. Existing saved shortcut lists receive the new feature once; a
+later user choice to hide it is respected. The older Family Trees shortcut
+migration remains supported. No new application database schema is required.
+
+Regression checks cover startup versus idle timeouts, thinking-frame activity
+without reasoning leakage, default/explicit Ollama thinking requests, saved
+thinking controls, feature navigation and one-time shortcut migration.
+
+```sh
+dart run tool/ai/verify_ollama.dart qwen3.5:2b
+```
+
+The local-only command uses the real gateway, protected prompts and Ollama
+adapter with a synthetic greeting. On this Linux host the installed Qwen 3.5
+2B model returned a complete answer in approximately 17 seconds with thinking
+disabled. This is an observed smoke test, not a latency guarantee. Ollama's
+service, model files and global configuration were not changed.
+
+Contract: [Ollama thinking controls](https://docs.ollama.com/capabilities/thinking).
+
+Validation for this fix: all 108 Flutter tests passed, including seven new
+regressions for startup/activity timing, thinking controls, and Home feature
+registration/migration/navigation. The five-provider local simulation passed.
+Scoped AI/test/tool analysis reported no issues; the broader navigation/settings
+check only reports existing filename-style notices on legacy CamelCase files.

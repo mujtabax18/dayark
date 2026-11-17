@@ -40,6 +40,7 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
       _inputLanguage = TextEditingController(),
       _customLanguage = TextEditingController();
   String? _id;
+  bool _thinking = false;
   String _language = 'Automatic';
   AiProviderKind _kind = AiProviderKind.offline;
   bool _online = false, _private = false, _busy = true, _clearSecret = false;
@@ -90,6 +91,7 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
         _online = value.allowOnlineProcessing;
         _private = value.allowPrivateContextOnline;
         final s = value.settings;
+        _thinking = s.thinking ?? false;
         final d = defaults.forKind(
           value.selectedProfile?.kind ?? AiProviderKind.offline,
         );
@@ -133,6 +135,7 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
   }
 
   void _behaviorDefaults() {
+    _thinking = false;
     final d = _defaults.forKind(_kind);
     _temperature.text = '${d.temperature}';
     _output.text = '${d.outputTokens}';
@@ -281,6 +284,7 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
             ? int.tryParse(_context.text)
             : null,
         customInstructions: _instructions.text,
+        thinking: _capabilities.thinking ? _thinking : null,
         inputLanguage: _inputLanguage.text.trim().isEmpty
             ? null
             : _inputLanguage.text.trim(),
@@ -655,6 +659,15 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
                   ],
                   const SizedBox(height: 24),
                   const Text('Behavior'),
+                  if (caps.thinking)
+                    SwitchListTile(
+                      value: _thinking,
+                      title: const Text('Enable model thinking'),
+                      subtitle: const Text(
+                        'Ollama reasoning can delay the answer and uses the output token budget. Off for faster everyday chat.',
+                      ),
+                      onChanged: (v) => setState(() => _thinking = v),
+                    ),
                   if (caps.temperature) ...[
                     Text(
                       'Temperature: ${(double.tryParse(_temperature.text) ?? .7).clamp(0, caps.maxTemperature ?? 2).toStringAsFixed(1)}',

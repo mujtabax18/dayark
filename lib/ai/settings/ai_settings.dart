@@ -7,6 +7,7 @@ class AiSettings {
     this.customInstructions = '',
     this.responseLanguage,
     this.inputLanguage,
+    this.thinking,
   }) {
     if (temperature != null && (!temperature!.isFinite || temperature! < 0)) {
       throw ArgumentError.value(temperature, 'temperature');
@@ -29,6 +30,7 @@ class AiSettings {
   final String customInstructions;
   final String? responseLanguage;
   final String? inputLanguage;
+  final bool? thinking;
   Map<String, dynamic> toJson() => {
     'temperature': temperature,
     'maxOutputTokens': maxOutputTokens,
@@ -36,6 +38,7 @@ class AiSettings {
     'customInstructions': customInstructions,
     'responseLanguage': responseLanguage,
     'inputLanguage': inputLanguage,
+    'thinking': thinking,
   };
   factory AiSettings.fromJson(Map<String, dynamic> json) => AiSettings(
     temperature: (json['temperature'] as num?)?.toDouble(),
@@ -44,5 +47,6 @@ class AiSettings {
     customInstructions: json['customInstructions'] as String? ?? '',
     responseLanguage: json['responseLanguage'] as String?,
     inputLanguage: json['inputLanguage'] as String?,
+    thinking: json['thinking'] as bool?,
   );
 }

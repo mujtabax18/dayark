@@ -173,4 +173,5 @@ AiSettings settingsForCapabilities(
   customInstructions: settings.customInstructions,
   responseLanguage: settings.responseLanguage,
   inputLanguage: settings.inputLanguage,
+  thinking: capabilities.thinking ? settings.thinking : null,
 );

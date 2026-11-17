@@ -71,7 +71,16 @@ class AiConfiguredAssistant {
       offline: offline ?? local?.provider,
     );
     try {
-      yield* AiOrchestrator(gateway: AiGateway(providers: [provider])).stream(
+      yield* AiOrchestrator(
+        gateway: AiGateway(
+          providers: [provider],
+          retryPolicy:
+              profile.kind == AiProviderKind.ollama ||
+                  profile.kind == AiProviderKind.offline
+              ? AiRetryPolicy.localInference()
+              : null,
+        ),
+      ).stream(
         selection: AiModelSelection(
           providerId: provider.id,
           modelId: profile.modelId,

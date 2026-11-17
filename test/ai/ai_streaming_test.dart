@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -30,6 +31,28 @@ class WaitingProvider implements AiProvider, AiStreamingProvider {
     starts++;
     await cancellationToken.whenCancelled;
     cancellationToken.throwIfCancelled();
+  }
+}
+
+class ActiveThinkingProvider extends WaitingProvider {
+  @override
+  Stream<AiStreamEvent> stream(
+    AiRequest request, {
+    required AiCancellationToken cancellationToken,
+  }) async* {
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    for (var i = 0; i < 8; i++) {
+      cancellationToken.throwIfCancelled();
+      yield const AiStreamEvent.activity();
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+    }
+    yield const AiStreamEvent.delta('Ready');
+    yield AiStreamEvent.completed(
+      AiResponse(
+        selection: request.selection,
+        message: AiMessage(role: AiRole.assistant, text: 'Ready'),
+      ),
+    );
   }
 }
 
@@ -71,9 +94,11 @@ void main() {
     String model = 'test',
     List<AiAttachment> attachments = const [],
     bool allow = true,
+    AiSettings? settings,
   }) => AiRequest(
     selection: AiModelSelection(providerId: p.id, modelId: model),
     allowRemoteProcessing: allow,
+    settings: settings,
     messages: [
       AiMessage(role: AiRole.user, text: 'Hello', attachments: attachments),
     ],
@@ -85,6 +110,73 @@ void main() {
       attemptTimeout: const Duration(seconds: 3),
     ),
   );
+  test('cold startup has its own timeout and reasoning activity keeps an active stream alive', () async {
+    final provider = ActiveThinkingProvider();
+    final gateway = AiGateway(
+      providers: [provider],
+      retryPolicy: AiRetryPolicy(
+        attemptTimeout: const Duration(milliseconds: 10),
+        initialStreamTimeout: const Duration(seconds: 1),
+        streamInactivityTimeout: const Duration(milliseconds: 250),
+      ),
+    );
+    final req = AiRequest(
+      selection: AiModelSelection(providerId: provider.id, modelId: 'model'),
+      messages: [AiMessage(role: AiRole.user, text: 'Hello')],
+    );
+    final events = await gateway.stream(req).toList();
+    expect(events.where((e) => e.isActivity), hasLength(8));
+    expect(events.last.response!.message.text, 'Ready');
+    expect(
+      AiRetryPolicy.localInference().initialStreamTimeout,
+      const Duration(minutes: 5),
+    );
+    expect(
+      AiRetryPolicy.localInference().streamInactivityTimeout,
+      const Duration(minutes: 2),
+    );
+  });
+
+  test('Ollama thinking is opt-in and hidden reasoning emits activity instead of a false timeout', () async {
+    final p = OllamaProvider(baseUrl: base);
+    addTearDown(p.close);
+    responseText = [
+      {
+        'message': {
+          'role': 'assistant',
+          'thinking': 'synthetic-private-reasoning',
+          'content': '',
+        },
+        'done': false,
+      },
+      {
+        'message': {
+          'role': 'assistant',
+          'thinking': 'more-private-reasoning',
+          'content': '',
+        },
+        'done': false,
+      },
+      {
+        'message': {'role': 'assistant', 'content': 'Hello'},
+        'done': true,
+      },
+    ].map((event) => '${jsonEncode(event)}\n').join();
+    final events = await channel(p)
+        .stream(request(p, model: 'qwen3.5:2b'))
+        .toList();
+    expect(bodies.last['think'], isFalse);
+    expect(events.where((e) => e.isActivity), hasLength(2));
+    expect(events.map((e) => e.text).join(), 'Hello');
+    expect(events.last.response!.message.text, 'Hello');
+    await channel(p)
+        .stream(
+          request(p, model: 'qwen3.5:2b', settings: AiSettings(thinking: true)),
+        )
+        .toList();
+    expect(bodies.last['think'], isTrue);
+  });
+
   test('stream inactivity times out and cancellation interrupts waiting without replay', () async {
     final provider = WaitingProvider();
     final req = AiRequest(

@@ -83,6 +83,9 @@ abstract class HttpAiProvider
       temperature: !reasoning && !fixedClaudeSampling,
       maxTemperature: protocol == AiHttpProtocol.anthropic ? 1 : 2,
       contextWindow: protocol == AiHttpProtocol.ollama,
+      thinking:
+          protocol == AiHttpProtocol.ollama &&
+          RegExp(r'^(qwen3|deepseek-r1|gemma4)').hasMatch(modelId),
     );
   }
 
@@ -173,7 +176,8 @@ abstract class HttpAiProvider
                 (caps.maxTemperature != null &&
                     settings.temperature! > caps.maxTemperature!))) ||
         (settings.maxOutputTokens != null && !caps.outputTokenLimit) ||
-        (settings.contextWindowTokens != null && !caps.contextWindow)) {
+        (settings.contextWindowTokens != null && !caps.contextWindow) ||
+        (settings.thinking != null && !caps.thinking)) {
       throw const AiException(
         AiErrorCode.unsupportedCapability,
         'Unsupported model settings.',
@@ -287,6 +291,9 @@ abstract class HttpAiProvider
       case AiHttpProtocol.ollama:
         path = 'chat';
         body = {
+          // Ordinary chat should answer promptly rather than inherit a model's
+          // potentially long reasoning default. Users can explicitly opt in.
+          'think': settings.thinking ?? false,
           'model': request.selection.modelId,
           'messages': messages,
           'stream': false,
@@ -386,6 +393,7 @@ abstract class HttpAiProvider
         );
       }
       String delta = '';
+      var activity = false;
       switch (protocol) {
         case AiHttpProtocol.openai:
         case AiHttpProtocol.compatible:
@@ -458,6 +466,7 @@ abstract class HttpAiProvider
               throw invalidAiResponse;
             }
             delta = message['content'] as String? ?? '';
+            activity = (message['thinking'] as String? ?? '').isNotEmpty;
           }
           if (event['done'] == true) {
             terminal = true;
@@ -469,6 +478,8 @@ abstract class HttpAiProvider
       if (delta.isNotEmpty) {
         buffer.write(delta);
         yield AiStreamEvent.delta(delta);
+      } else if (activity) {
+        yield const AiStreamEvent.activity();
       }
     }
     if (!terminal || buffer.toString().trim().isEmpty) throw invalidAiResponse;

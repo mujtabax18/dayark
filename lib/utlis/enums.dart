@@ -28,4 +28,5 @@ enum AppSettingKey {
   currencyCode,
   currencySymbol,
   currencyName,
+  aiChatHomeShortcutMigrated,
 }

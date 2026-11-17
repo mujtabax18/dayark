@@ -209,6 +209,7 @@ class HomeLayoutSettings {
     12,
     13,
     14,
+    15,
   };
   static const Set<int> defaultVisibleQuickAccessIds = quickAccessFeatureIds;
 

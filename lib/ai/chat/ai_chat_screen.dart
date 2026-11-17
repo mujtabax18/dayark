@@ -497,7 +497,22 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
               style: Theme.of(context).textTheme.labelMedium,
             ),
             const SizedBox(height: 8),
-            if (m.state == AiChatMessageState.pending)
+            if (m.state == AiChatMessageState.pending && m.message.text == '…')
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  const SizedBox(width: 10),
+                  Flexible(
+                    child: Text(_chat!.activity ?? 'Waiting for model…'),
+                  ),
+                ],
+              )
+            else if (m.state == AiChatMessageState.pending)
               SelectableText(m.message.text)
             else
               MarkdownBody(

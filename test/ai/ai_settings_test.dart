@@ -230,4 +230,47 @@ void main() {
     expect(await store.credential('api'), isNull);
     expect(tester.takeException(), isNull);
   });
+  testWidgets(
+    'Ollama Qwen thinking is off by default and can be saved explicitly',
+    (tester) async {
+      tester.view.physicalSize = const Size(1000, 2800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await store.save(
+        AiPreferences(
+          profiles: [
+            profile(
+              id: 'qwen',
+              kind: AiProviderKind.ollama,
+              model: 'qwen3.5:2b',
+            ),
+          ],
+          selectedProfileId: 'qwen',
+        ),
+      );
+      await tester.pumpWidget(
+        MaterialApp(home: AiSettingsScreen(store: store)),
+      );
+      await tester.pumpAndSettle();
+      final toggle = find.widgetWithText(
+        SwitchListTile,
+        'Enable model thinking',
+      );
+      expect(tester.widget<SwitchListTile>(toggle).value, isFalse);
+      await tester.tap(toggle);
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Save settings'));
+      await tester.tap(find.text('Save settings'));
+      await tester.pumpAndSettle();
+      expect(store.load().settings.thinking, isTrue);
+      expect(
+        settingsForCapabilities(
+          store.load().settings,
+          AiCapabilities(),
+        ).thinking,
+        isNull,
+      );
+    },
+  );
 }
