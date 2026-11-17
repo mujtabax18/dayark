@@ -85,9 +85,9 @@ Local discovery lists configured files, and connection testing verifies loading.
 - HTTPS is required for remote URLs; loopback HTTP is accepted for local servers.
   Unencrypted LAN/custom HTTP requires explicit `allowInsecureHttp: true`.
   URLs containing credentials, query strings or fragments are rejected.
-- Adapters currently accept text only. Unsupported settings and attachments fail
-  explicitly. Attachment resolution/upload and public streaming are Part 5.
-  Shared `AiSettings` values are translated per protocol; no provider sees
+- Part 5 adds streaming and inline attachments for capable models, with UTF-8
+  text documents also supported offline. Unsupported settings and attachments
+  fail explicitly. Shared `AiSettings` values are translated per protocol; no provider sees
   another provider's wire format. Use `modelCapabilities` overrides for specific
   model restrictions; discovery catalogs do not reliably expose all capabilities.
 - Unknown provider errors are sanitized. Only transient mapped failures retry,

@@ -19,7 +19,7 @@ not change the global default profile.
 | 36 | Per-conversation profile selection, shared history, model provenance on replies |
 | 37 | App-owned attachment bytes: PNG/JPEG/WebP, PDF, UTF-8 TXT/Markdown; capable adapters serialize inline multimodal parts; text documents also work offline |
 | 38 | JSON, Markdown or plain-text export through the platform share/save sheet; JSON contains attachment bytes; text formats list attachment metadata |
-| 39 | Explicit opt-in, manual conversation sync with currently paired DayArk devices using the existing pinned HTTPS listener and authentication |
+| 39 | Explicit opt-in, automatic and manual conversation sync with currently paired DayArk devices using the existing pinned HTTPS listener and authentication |
 
 ## Persistence and message lifecycle
 
@@ -53,6 +53,10 @@ SQLite updates use optimistic revisions. If a chat changes concurrently while
 a local response is generated, that response is preserved in a private local
 copy rather than overwriting the received version. Database write failures are
 reported instead of claiming that a response was persisted.
+
+Conversation selection and history searches discard superseded database reads.
+A delayed selection cannot reopen a conversation after **New chat**, and a
+background refresh cannot replace a newly selected, edited or streaming turn.
 
 ## Attachments and privacy
 
@@ -218,6 +222,13 @@ disabled. This is an observed smoke test, not a latency guarantee. Ollama's
 service, model files and global configuration were not changed.
 
 Contract: [Ollama thinking controls](https://docs.ollama.com/capabilities/thinking).
+
+Chat concurrency validation on 2026-11-17: all 120 Flutter tests passed;
+`dart analyze lib/ai test/ai tool/ai` reported no issues. Four additional
+regressions cover delayed selection after New chat, out-of-order selections,
+refresh during streaming, and out-of-order history searches. This verification
+used injected streams and local databases; live providers and physical paired
+devices were not exercised.
 
 Validation for this fix: all 108 Flutter tests passed, including seven new
 regressions for startup/activity timing, thinking controls, and Home feature

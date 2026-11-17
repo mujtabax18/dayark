@@ -7,14 +7,49 @@ import 'package:metersystem/ai/chat/ai_chat_store.dart';
 import 'package:metersystem/ai/chat/ai_chat_controller.dart';
 import 'package:metersystem/ai/chat/ai_conversation.dart';
 
+class DelayedChatStore extends AiChatStore {
+  DelayedChatStore(super.database);
+
+  Future<void> Function()? beforeGetReturns;
+  Future<void> Function()? beforeListReturns;
+
+  @override
+  Future<AiConversation?> get(String id) async {
+    final delay = beforeGetReturns;
+    beforeGetReturns = null;
+    final value = await super.get(id);
+    await delay?.call();
+    return value;
+  }
+
+  @override
+  Future<List<AiConversation>> list({
+    String query = '',
+    bool archived = false,
+    String? folder,
+    bool summaries = false,
+  }) async {
+    final delay = beforeListReturns;
+    beforeListReturns = null;
+    final value = await super.list(
+      query: query,
+      archived: archived,
+      folder: folder,
+      summaries: summaries,
+    );
+    await delay?.call();
+    return value;
+  }
+}
+
 void main() {
-  late AiChatStore store;
+  late DelayedChatStore store;
   late AiChatController chat;
   final histories = <List<AiMessage>>[], profiles = <String?>[];
   var fail = false, hang = false;
   late Completer<void> started;
   setUp(() {
-    store = AiChatStore(AiChatDatabase(NativeDatabase.memory()));
+    store = DelayedChatStore(AiChatDatabase(NativeDatabase.memory()));
     histories.clear();
     profiles.clear();
     fail = false;
@@ -65,6 +100,88 @@ void main() {
     await store.close();
   });
   AiMessage user(String text) => AiMessage(role: AiRole.user, text: text);
+  test('a delayed selection cannot reopen a chat after New chat', () async {
+    await chat.send(user('First'), profileId: 'offline');
+    final id = chat.active!.id;
+    final reading = Completer<void>(), release = Completer<void>();
+    store.beforeGetReturns = () async {
+      reading.complete();
+      await release.future;
+    };
+    final selecting = chat.select(id);
+    await reading.future;
+    chat.newChat();
+    release.complete();
+    await selecting;
+    expect(chat.active, isNull);
+  });
+
+  test(
+    'the latest selection wins when database reads finish out of order',
+    () async {
+      await chat.send(user('First'), profileId: 'offline');
+      final first = chat.active!.id;
+      chat.newChat();
+      await chat.send(user('Second'), profileId: 'offline');
+      final second = chat.active!.id;
+      final reading = Completer<void>(), release = Completer<void>();
+      store.beforeGetReturns = () async {
+        reading.complete();
+        await release.future;
+      };
+      final selecting = chat.select(first);
+      await reading.future;
+      await chat.select(second);
+      release.complete();
+      await selecting;
+      expect(chat.active!.id, second);
+    },
+  );
+
+  test('a delayed refresh cannot replace an active streaming turn', () async {
+    await chat.send(user('First'), profileId: 'offline');
+    final reading = Completer<void>(), release = Completer<void>();
+    store.beforeGetReturns = () async {
+      reading.complete();
+      await release.future;
+    };
+    final refreshing = chat.refresh();
+    await reading.future;
+    hang = true;
+    started = Completer<void>();
+    final sending = chat.send(user('Second'), profileId: 'offline');
+    await started.future;
+    release.complete();
+    await refreshing;
+    expect(chat.active!.messages, hasLength(4));
+    expect(chat.active!.messages.last.message.text, 'Hello ');
+    chat.stop();
+    await sending;
+    final saved = (await store.get(chat.active!.id))!;
+    expect(saved.messages, hasLength(4));
+    expect(saved.messages[2].message.text, 'Second');
+    expect(saved.messages.last.state, AiChatMessageState.stopped);
+  });
+
+  test('a delayed search cannot replace results for a newer query', () async {
+    await chat.send(user('First'), profileId: 'offline');
+    chat.newChat();
+    await chat.send(user('Second'), profileId: 'offline');
+    final reading = Completer<void>(), release = Completer<void>();
+    store.beforeListReturns = () async {
+      reading.complete();
+      await release.future;
+    };
+    chat.query = 'First';
+    final refreshing = chat.refresh();
+    await reading.future;
+    chat.query = 'Second';
+    await chat.refresh();
+    release.complete();
+    await refreshing;
+    expect(chat.conversations.single.title, 'Second');
+  });
+
   test(
     'conversation persists final messages and model switching keeps history',
     () async {

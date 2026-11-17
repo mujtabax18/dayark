@@ -35,30 +35,41 @@ class AiChatController extends ChangeNotifier {
   String thinkingText = '';
   AiCancellationToken? _token;
   bool _disposed = false;
+  int _selectionVersion = 0, _refreshVersion = 0;
   void _notify() {
     if (!_disposed) notifyListeners();
   }
 
   Future<void> refresh() async {
+    final version = ++_refreshVersion;
     final value = await store.list(
       query: query,
       archived: showArchived,
       folder: folder,
       summaries: true,
     );
-    if (_disposed) return;
+    if (_disposed || version != _refreshVersion) return;
     if (!busy && active != null) {
-      final latest = await store.get(active!.id);
-      if (_disposed) return;
-      active = latest == null || latest.deleted ? null : latest;
+      final selected = active;
+      final selectionVersion = _selectionVersion;
+      final latest = await store.get(selected!.id);
+      if (_disposed || version != _refreshVersion) return;
+      // Navigation, edits or generation may have happened during the read.
+      if (!busy &&
+          selectionVersion == _selectionVersion &&
+          identical(active, selected)) {
+        active = latest == null || latest.deleted ? null : latest;
+      }
     }
     conversations = value;
     _notify();
   }
 
   Future<void> select(String id) async {
-    if (busy) return;
+    if (busy || _disposed) return;
+    final version = ++_selectionVersion;
     var value = await store.get(id);
+    if (_disposed || busy || version != _selectionVersion) return;
     if (value == null || value.deleted) {
       active = null;
       _notify();
@@ -80,6 +91,7 @@ class AiChatController extends ChangeNotifier {
         expectedRevision: value.revision,
       );
     }
+    if (_disposed || busy || version != _selectionVersion) return;
     active = value;
     thinkingText = '';
     status = null;
@@ -88,6 +100,7 @@ class AiChatController extends ChangeNotifier {
 
   void newChat() {
     if (busy) return;
+    ++_selectionVersion;
     active = null;
     thinkingText = '';
     status = null;
@@ -162,6 +175,7 @@ class AiChatController extends ChangeNotifier {
       return false;
     }
     var accepted = false;
+    ++_selectionVersion;
     busy = true;
     status = null;
     activity = 'Waiting for model…';
