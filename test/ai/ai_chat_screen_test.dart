@@ -125,6 +125,61 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  testWidgets(
+    'chat exposes prompts and persists the extra prompt switch on mobile',
+    (tester) async {
+      await open(tester, mobile: true);
+      await tester.tap(find.text('Your instructions'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.byType(TextField),
+        ),
+        'Keep replies short. Help me plan my DayArk tasks.',
+      );
+      await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+      await tester.pumpAndSettle();
+      expect(
+        settings.load().settings.customInstructions,
+        contains('DayArk tasks'),
+      );
+
+      await tester.tap(find.text('View prompts'));
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining('Keep replies short.', findRichText: true),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('Close'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(Switch));
+      await tester.pumpAndSettle();
+      expect(settings.load().settings.sendAdditionalPrompt, isFalse);
+      expect(settings.load().profiles, hasLength(2));
+      expect(
+        settings.load().settings.customInstructions,
+        contains('DayArk tasks'),
+      );
+
+      await tester.tap(find.text('View prompts'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('You are the DayArk assistant'), findsNothing);
+      expect(
+        find.textContaining('Keep replies short.', findRichText: true),
+        findsNothing,
+      );
+      await tester.tap(find.text('Latest request'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Send a message to see'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.tap(find.text('Close'));
+      await tester.pumpAndSettle();
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpAndSettle();
+    },
+  );
+
   testWidgets('local chat shows live thinking, then streams the answer', (
     tester,
   ) async {
@@ -311,8 +366,43 @@ void main() {
   );
 
   testWidgets(
-    'oversized draft is kept, summary is opt-in and reviewed before sending',
+    'local draft reaches the model without byte-based context rejection',
     (tester) async {
+      await settings.save(
+        AiPreferences(
+          profiles: settings.load().profiles,
+          selectedProfileId: 'first',
+          settings: AiSettings(
+            contextWindowTokens: 2048,
+            maxOutputTokens: 2048,
+          ),
+        ),
+      );
+      await open(tester);
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Message DayArk…'),
+        'hello',
+      );
+      await tester.tap(find.byTooltip('Send message'));
+      await tester.pumpAndSettle();
+      expect(selected, ['first']);
+      expect(find.text('Input exceeds the model limit'), findsNothing);
+      expect((await chats.list()).single.messages.first.message.text, 'hello');
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpAndSettle();
+    },
+  );
+
+  testWidgets(
+    'remote oversized draft is kept, summary is opt-in and reviewed before sending',
+    (tester) async {
+      await settings.save(
+        AiPreferences(
+          profiles: settings.load().profiles,
+          selectedProfileId: 'second',
+          allowOnlineProcessing: true,
+        ),
+      );
       await open(
         tester,
         engine:
@@ -384,8 +474,15 @@ void main() {
   );
 
   testWidgets(
-    'summary progress is a compact chat-pane dialog and streams formatted thoughts',
+    'remote summary progress is a compact chat-pane dialog and streams formatted thoughts',
     (tester) async {
+      await settings.save(
+        AiPreferences(
+          profiles: settings.load().profiles,
+          selectedProfileId: 'second',
+          allowOnlineProcessing: true,
+        ),
+      );
       tester.view.physicalSize = const Size(1200, 900);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
@@ -678,6 +775,25 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
     expect(find.byTooltip('Send message'), findsOneWidget);
+    await tester.tap(find.byTooltip('Prompt controls'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Disable extra prompt'));
+    await tester.pumpAndSettle();
+    expect(settings.load().settings.sendAdditionalPrompt, isFalse);
+    await tester.tap(find.byTooltip('Prompt controls'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('View prompts'));
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.textContaining('Line one', findRichText: true),
+      ),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+    await tester.tap(find.text('Close'));
+    await tester.pumpAndSettle();
     await tester.pumpWidget(const SizedBox());
     await tester.pumpAndSettle();
   });

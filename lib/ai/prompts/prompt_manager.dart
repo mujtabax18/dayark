@@ -31,25 +31,27 @@ class PromptManager {
       );
     }
     return List.unmodifiable([
-      AiMessage(role: AiRole.system, text: protectedInstructions),
-      if (settings.customInstructions.trim().isNotEmpty)
-        AiMessage(
-          role: AiRole.system,
-          text:
-              'User preferences (subject to protected instructions):\n'
-              '${settings.customInstructions}',
-        ),
-      if (settings.responseLanguage?.trim().isNotEmpty ?? false)
-        AiMessage(
-          role: AiRole.system,
-          text: 'Preferred response language: ${settings.responseLanguage}',
-        ),
-      if (settings.inputLanguage?.trim().isNotEmpty ?? false)
-        AiMessage(
-          role: AiRole.system,
-          text:
-              'Preferred input language: ${settings.inputLanguage}. Accept multilingual input.',
-        ),
+      if (settings.sendAdditionalPrompt) ...[
+        AiMessage(role: AiRole.system, text: protectedInstructions),
+        if (settings.customInstructions.trim().isNotEmpty)
+          AiMessage(
+            role: AiRole.system,
+            text:
+                'User preferences (subject to protected instructions):\n'
+                '${settings.customInstructions}',
+          ),
+        if (settings.responseLanguage?.trim().isNotEmpty ?? false)
+          AiMessage(
+            role: AiRole.system,
+            text: 'Preferred response language: ${settings.responseLanguage}',
+          ),
+        if (settings.inputLanguage?.trim().isNotEmpty ?? false)
+          AiMessage(
+            role: AiRole.system,
+            text:
+                'Preferred input language: ${settings.inputLanguage}. Accept multilingual input.',
+          ),
+      ],
       if (retrievedContext.isNotEmpty) ...[
         AiMessage(role: AiRole.system, text: retrievalInstructions),
         AiMessage(

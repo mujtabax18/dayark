@@ -1,10 +1,14 @@
 import '../../core/ai_stream.dart';
 
 import 'dart:io';
+import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:llamadart/llamadart.dart';
 
 import '../../core/ai_cancellation.dart';
+import '../../hardware/hardware_probe.dart';
+import '../../model_manager/gguf_metadata.dart';
 import '../../core/ai_error.dart';
 import '../../models/ai_models.dart';
 import '../../models/ai_request.dart';
@@ -22,11 +26,21 @@ class LlamadartRuntime implements AiOfflineRuntime, AiStreamingOfflineRuntime {
   LlamaEngine? _engine;
   String? _path;
   int? _contextSize;
+  int? _configuredContext;
+  AiLocalModel? _model;
+  int? _loadMilliseconds;
 
   @override
   Future<void> load(AiLocalModel model, AiCancellationToken token) async {
     token.throwIfCancelled();
-    if (_path == model.path && _contextSize == model.contextSize) return;
+    if (_path == model.path && _configuredContext == model.contextSize) {
+      model.activeContextSize = _contextSize;
+      if (!identical(_model, model)) {
+        model.performance ??= _model?.performance;
+        _model = model;
+      }
+      return;
+    }
     if (!await File(model.path).exists()) {
       throw const AiException(
         AiErrorCode.providerUnavailable,
@@ -37,36 +51,68 @@ class LlamadartRuntime implements AiOfflineRuntime, AiStreamingOfflineRuntime {
     final engine = _engine ??= LlamaEngine(LlamaBackend());
     _path = null;
     _contextSize = null;
+    _model?.activeContextSize = null;
+    _model = null;
+    final loadTimer = Stopwatch()..start();
     try {
+      // Direct integrations (including the inspection tool) may omit the
+      // context. Resolve it from the actual GGUF, never a catalogue default.
+      var configured = model.contextSize;
+      if (configured == null) {
+        final metadata = await GgufMetadata.read(model.path);
+        token.throwIfCancelled();
+        final hardware = await detectAiHardware(
+          storagePath: File(model.path).parent.path,
+        );
+        configured = metadata.chooseContext(
+          hardware.availableMemoryBytes,
+          hardware.totalMemoryBytes,
+        );
+      }
+      final int requestedContext = configured;
+      token.throwIfCancelled();
       try {
         await engine.setModel(
           LlamaModel(ModelSource.path(model.path)),
           params: ModelParams(
-            contextSize: model.contextSize,
-            device: ComputeDevice.auto,
+            contextSize: requestedContext,
+            device: (model.gpuLayers ?? 0) > 0 ? ComputeDevice.auto : ComputeDevice.cpu,
             // Android auto otherwise selects CPU even with Vulkan bundled.
             preferredBackend: Platform.isAndroid
                 ? GpuBackend.vulkan
                 : GpuBackend.auto,
-            // Keep most layers on CPU instead of attempting full GPU residency.
-            gpuLayers: Platform.isAndroid || Platform.isIOS ? 4 : 8,
+            // Offload budget is derived from measured device resources and model layers.
+            gpuLayers: model.gpuLayers ?? 0,
           ),
         );
       } catch (_) {
         token.throwIfCancelled();
-        // Retry driver, backend or VRAM failures without GPU allocations.
-        await engine.setModel(
-          LlamaModel(ModelSource.path(model.path)),
-          params: ModelParams(
-            contextSize: model.contextSize,
-            device: ComputeDevice.cpu,
-            gpuLayers: 0,
-          ),
-        );
+        // Retry on CPU, reducing context if allocation still fails. This is
+        // best-effort: a native OS out-of-memory kill cannot be caught here.
+        var context = requestedContext;
+        while (true) {
+          try {
+            await engine.setModel(
+              LlamaModel(ModelSource.path(model.path)),
+              params: ModelParams(contextSize: context, device: ComputeDevice.cpu, gpuLayers: 0),
+            );
+            break;
+          } catch (_) {
+            token.throwIfCancelled();
+            final minimum = math.min(requestedContext, 256);
+            if (context <= minimum) rethrow;
+            context = math.max(minimum, context ~/ 2);
+          }
+        }
       }
       token.throwIfCancelled();
+      _contextSize = await engine.getContextSize();
+      if (_contextSize! <= 0) throw StateError('Invalid runtime context');
       _path = model.path;
-      _contextSize = model.contextSize;
+      _configuredContext = model.contextSize;
+      model.activeContextSize = _contextSize;
+      _model = model;
+      _loadMilliseconds = loadTimer.elapsedMilliseconds;
     } on AiException {
       rethrow;
     } catch (_) {
@@ -103,13 +149,6 @@ class LlamadartRuntime implements AiOfflineRuntime, AiStreamingOfflineRuntime {
         'No local AI model is loaded.',
       );
     }
-    if (request.settings.contextWindowTokens != null &&
-        request.settings.contextWindowTokens! != _contextSize) {
-      throw const AiException(
-        AiErrorCode.unsupportedCapability,
-        'Context size must match the configured local model.',
-      );
-    }
     final remove = token.onCancel(engine.cancelGeneration);
     try {
       final buffer = StringBuffer();
@@ -133,16 +172,32 @@ class LlamadartRuntime implements AiOfflineRuntime, AiStreamingOfflineRuntime {
             text: message.text,
           ),
       ];
-      await for (final chunk in engine.create(
+      final fitted = await fitLocalChatContext(
         messages,
+        contextSize: _contextSize!,
+        countTokens: (candidate) async {
+          token.throwIfCancelled();
+          final template = await engine.chatTemplate(candidate);
+          return template.tokenCount ??
+              (await engine.tokenize(template.prompt)).length;
+        },
+      );
+      final template = await engine.chatTemplate(fitted);
+      final promptTokens = template.tokenCount ?? (await engine.tokenize(template.prompt)).length;
+      final remaining = _contextSize! - promptTokens;
+      if (remaining <= 0) throw const AiException(AiErrorCode.invalidRequest, 'No context remains for the response.');
+      final timer = Stopwatch()..start();
+      var peakRss = ProcessInfo.currentRss;
+      await for (final chunk in engine.create(
+        fitted,
         params: GenerationParams(
           temp: request.settings.temperature ?? 0.8,
-          // llama.cpp's Dart loop requires a positive token count. This sentinel
-          // removes the app's default output quota; EOS, native context and Stop govern completion.
-          maxTokens: request.settings.maxOutputTokens ?? 0x7fffffff,
+          // Bound output by the actual remaining context; EOS or Stop can end earlier.
+          maxTokens: math.min(request.settings.maxOutputTokens ?? remaining, remaining),
         ),
       )) {
         token.throwIfCancelled();
+        peakRss = math.max(peakRss, ProcessInfo.currentRss);
         if (chunk.thinking.isNotEmpty) {
           hasThinking = true;
           yield AiStreamEvent.activity(thinking: chunk.thinking);
@@ -166,6 +221,21 @@ class LlamadartRuntime implements AiOfflineRuntime, AiStreamingOfflineRuntime {
           AiErrorCode.invalidResponse,
           'Local model returned no text.',
         );
+      }
+      timer.stop();
+      final model = _model;
+      if (model != null) {
+        final count = usage.outputTokens;
+        final speed = count != null && count > 0 && timer.elapsedMicroseconds > 0
+            ? count * Duration.microsecondsPerSecond / timer.elapsedMicroseconds : null;
+        model.performance = AiLocalPerformance(contextSize: _contextSize!, tokensPerSecond: speed,
+          peakProcessRssBytes: peakRss, loadMilliseconds: _loadMilliseconds);
+        try {
+          await File('${model.path}.perf').writeAsString(jsonEncode({
+            'contextSize': _contextSize!, 'tokensPerSecond': speed,
+            'peakProcessRssBytes': peakRss, 'loadMilliseconds': _loadMilliseconds,
+          }));
+        } catch (_) { /* Telemetry persistence must not fail chat. */ }
       }
       yield AiStreamEvent.completed(
         AiResponse(
@@ -195,6 +265,37 @@ class LlamadartRuntime implements AiOfflineRuntime, AiStreamingOfflineRuntime {
     _engine = null;
     _path = null;
     _contextSize = null;
+    _configuredContext = null;
+    _model?.activeContextSize = null;
+    _model = null;
     await engine?.dispose();
+  }
+}
+
+/// Keep the current input intact. Only discard old turns after the loaded
+/// model's rendered template and tokenizer show they no longer fit.
+Future<List<LlamaChatMessage>> fitLocalChatContext(
+  List<LlamaChatMessage> messages, {
+  required int contextSize,
+  required Future<int> Function(List<LlamaChatMessage>) countTokens,
+}) async {
+  final fitted = List<LlamaChatMessage>.of(messages);
+  while (true) {
+    final tokens = await countTokens(fitted);
+    if (tokens < contextSize) return fitted;
+    final first = fitted.indexWhere((m) => m.role != LlamaChatRole.system);
+    if (first < 0 || first == fitted.length - 1) {
+      throw AiException(
+        AiErrorCode.invalidRequest,
+        'The model tokenizer counted $tokens input tokens for a $contextSize-token context. '
+        'Shorten the input or turn off the additional prompt in AI settings.',
+      );
+    }
+    fitted.removeAt(first);
+    // Do not leave an orphaned assistant turn at the start of the chat.
+    while (first < fitted.length - 1 &&
+        fitted[first].role == LlamaChatRole.assistant) {
+      fitted.removeAt(first);
+    }
   }
 }

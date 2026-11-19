@@ -1,3 +1,5 @@
+import '../../settings/ai_settings.dart';
+
 import '../../core/ai_stream.dart';
 import '../../core/ai_attachments.dart';
 
@@ -37,6 +39,7 @@ class OfflineAiProvider implements AiManagedProvider, AiStreamingProvider {
   AiOfflineRuntime? _runtime;
   Future<void>? _active;
   AiCancellationToken? _activeToken;
+  void Function()? onPerformanceChanged;
   bool _closed = false;
   Future<void>? _disposal;
 
@@ -107,7 +110,9 @@ class OfflineAiProvider implements AiManagedProvider, AiStreamingProvider {
     final model = _model(request.selection.modelId);
     await runtime.load(model, cancellationToken);
     cancellationToken.throwIfCancelled();
-    return runtime.generate(request, cancellationToken);
+    final response = await runtime.generate(request, cancellationToken);
+    onPerformanceChanged?.call();
+    return response;
   });
 
   AiRequest _prepare(AiRequest value) {
@@ -134,17 +139,15 @@ class OfflineAiProvider implements AiManagedProvider, AiStreamingProvider {
         'Offline adapter currently accepts text only.',
       );
     }
-    final model = _model(request.selection.modelId);
-    if ((request.settings.contextWindowTokens != null &&
-            request.settings.contextWindowTokens != model.contextSize) ||
-        (request.settings.maxOutputTokens != null &&
-            request.settings.maxOutputTokens! >= model.contextSize)) {
-      throw const AiException(
-        AiErrorCode.invalidRequest,
-        'Settings exceed or differ from the configured local context.',
-      );
-    }
-    return request;
+    // Offline settings follow the selected model, not the shared online window.
+    final settings = request.settings.toJson();
+    settings['contextWindowTokens'] = null;
+    return AiRequest(selection: request.selection, messages: request.messages,
+      settings: AiSettings.fromJson(settings),
+      allowRemoteProcessing: request.allowRemoteProcessing,
+      containsPrivateContext: request.containsPrivateContext,
+      allowPrivateContextOnline: request.allowPrivateContextOnline);
+
   }
 
   @override
@@ -173,6 +176,7 @@ class OfflineAiProvider implements AiManagedProvider, AiStreamingProvider {
                       )) {
                     localToken.throwIfCancelled();
                     controller.add(event);
+                    if (event.response != null) onPerformanceChanged?.call();
                   }
                 } else {
                   controller.add(
@@ -221,7 +225,7 @@ class OfflineAiProvider implements AiManagedProvider, AiStreamingProvider {
           selection: AiModelSelection(providerId: id, modelId: model.id),
           name: model.name,
           capabilities: capabilitiesFor(model.id),
-          inputTokenLimit: model.contextSize,
+          inputTokenLimit: model.activeContextSize ?? model.contextSize ?? model.nativeContextSize,
         ),
       ),
     );

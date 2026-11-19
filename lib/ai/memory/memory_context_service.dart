@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import '../chat/ai_chat_store.dart';
+import '../core/ai_input_preparation.dart';
 import '../models/ai_models.dart';
 import '../rag/embedding_provider.dart';
 import '../rag/context_builder.dart';
@@ -26,12 +27,15 @@ class MemoryContextService {
     required Iterable<AiMessage> history,
     required AiSettings settings,
     EmbeddingProvider? embeddings,
+    bool deferToRuntime = false,
   }) async {
     final rag = await memory.flag('rag'),
         facts = await memory.flag('memory'),
         indexChats = await memory.flag('indexChats');
-    final provider = embeddings ?? await configuredEmbeddings(memory);
-    if (chats != null) {
+    final provider = rag || facts || indexChats
+        ? embeddings ?? await configuredEmbeddings(memory)
+        : null;
+    if (indexChats && chats != null) {
       await ChatMemoryService(memory, chats!).synchronize(embeddings: provider);
     }
     final hits = rag || facts || indexChats
@@ -45,16 +49,22 @@ class MemoryContextService {
             },
           )
         : <RetrievalHit>[];
+    // Plain local chat retains history for the model tokenizer to trim exactly.
+    if (deferToRuntime && hits.isEmpty) {
+      return AiBuiltContext(history.toList(), '', const []);
+    }
     return const ContextBuilder().build(
       history: history,
       message: message,
       hits: hits,
       contextTokens: settings.contextWindowTokens ?? 4096,
-      outputTokens: settings.maxOutputTokens ?? 1024,
+      outputTokens: deferToRuntime ? 0 : settings.maxOutputTokens ?? 1024,
+      enforceInputLimit: !deferToRuntime,
       instructionBytes:
-          1024 +
-          utf8.encode(settings.customInstructions).length +
-          utf8.encode(PromptManager.retrievalInstructions).length,
+          aiAdditionalPromptBytes(settings) +
+          (hits.isEmpty
+              ? 0
+              : utf8.encode(PromptManager.retrievalInstructions).length + 128),
       summarize: await memory.flag('summaries'),
     );
   }

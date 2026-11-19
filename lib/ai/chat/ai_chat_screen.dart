@@ -15,8 +15,6 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../services/device_sync/device_sync_service.dart';
-import '../../screens/navigation/widgets/desktop_navigation_scope.dart';
-import '../../utlis/app_router.dart';
 import '../core/ai_attachments.dart';
 import '../core/ai_capabilities.dart';
 import '../core/ai_cancellation.dart';
@@ -32,6 +30,7 @@ import '../memory/memory_store.dart';
 import '../memory/memory_screen.dart';
 import '../memory/memory_context_service.dart';
 import '../models/ai_models.dart';
+import '../prompts/prompt_manager.dart';
 import '../settings/ai_preferences.dart';
 import '../settings/ai_defaults_screen.dart' show aiProviderLabel;
 import '../settings/ai_configured_assistant.dart';
@@ -107,6 +106,9 @@ class _AiChatScreenState extends ConsumerState<_AiChatPane>
   bool _framePending = false, _preparing = false, _draftPrivate = false;
   AiCancellationToken? _preparationToken;
   int? _draftRetryIndex;
+  List<AiMessage>? _lastPrompt;
+  String? _lastPromptChatId;
+
   @override
   void initState() {
     super.initState();
@@ -153,6 +155,13 @@ class _AiChatScreenState extends ConsumerState<_AiChatPane>
               history: history,
               profileId: profileId,
               cancellationToken: cancellationToken,
+              onPreparedMessages: (messages) {
+                if (!mounted) return;
+                setState(() {
+                  _lastPrompt = messages;
+                  _lastPromptChatId = _chat?.active?.id;
+                });
+              },
             ),
       );
       _chat!.addListener(_changed);
@@ -193,14 +202,9 @@ class _AiChatScreenState extends ConsumerState<_AiChatPane>
   AiProviderProfile? get _profile =>
       _preferences.profiles.where((p) => p.id == _profileId).firstOrNull;
   Future<void> _settingsPage() async {
-    final desktop = DesktopNavigationScope.maybeOf(context);
-    if (MediaQuery.sizeOf(context).width >= 1100 && desktop != null) {
-      desktop.onOpenRoute(RoutesStr.aiSettings);
-      return;
-    }
     await Navigator.push<void>(
       context,
-      MaterialPageRoute(builder: (_) => AiSettingsScreen(store: _settings)),
+      MaterialPageRoute(builder: (_) => AiSettingsScreen(store: _settings, promptPreview: _showPrompts)),
     );
     if (!mounted) return;
     setState(() {
@@ -235,6 +239,98 @@ class _AiChatScreenState extends ConsumerState<_AiChatPane>
     if (!mounted || id == null || _chat!.busy) return;
     setState(() => _profileId = id);
     await _chat!.update(profileId: id);
+  }
+
+  String _promptText(List<AiMessage> messages) => messages.isEmpty
+      ? 'No messages.'
+      : messages
+            .asMap()
+            .entries
+            .map((entry) {
+              final message = entry.value;
+              return '[${entry.key + 1} · ${message.role.name}]\n${message.text}'
+                  '${message.attachments.map((a) => '\n[Attachment: ${a.name ?? 'unnamed'} · ${a.mimeType} · ${a.bytes?.length ?? 0} bytes]').join()}';
+            })
+            .join('\n\n');
+
+  Widget _promptPanel(String text) => SingleChildScrollView(
+    padding: const EdgeInsets.symmetric(vertical: 12),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Draft shows instructions, history and your message. Memory and file text '
+          'are added during preparation. Latest request shows the prepared messages '
+          'for this chat. Providers apply their chat template; local models may trim older history. '
+          'Attachments are listed by name, type and size. Extra prompt switches DayArk instructions, '
+          'your instructions and language preferences on or off. Opted-in memory is controlled separately.',
+        ),
+        const SizedBox(height: 16),
+        SelectableText(text),
+      ],
+    ),
+  );
+
+  Future<void> _showPrompts() async {
+    final settings = _settings!.load().settings;
+    final history = (_chat!.active?.messages ?? <AiChatMessage>[])
+        .where((m) => m.state == AiChatMessageState.complete)
+        .map((m) => m.message);
+    final emptyDraft = _composer.text.trim().isEmpty && _attachments.isEmpty;
+    final built = const PromptManager().build(
+      settings: settings,
+      history: history,
+      message: AiMessage(
+        role: AiRole.user,
+        text: emptyDraft ? 'Empty draft' : _composer.text.trim(),
+        attachments: _attachments,
+      ),
+    );
+    final draft = emptyDraft ? built.take(built.length - 1).toList() : built;
+    final last = _lastPromptChatId == _chat!.active?.id ? _lastPrompt : null;
+    await showDialog<void>(
+      context: context,
+      useRootNavigator: false,
+      builder: (context) => DefaultTabController(
+        length: 2,
+        child: AlertDialog(
+          constraints: const BoxConstraints(maxWidth: 760, maxHeight: 680),
+          title: const Text('Prompts sent to AI'),
+          content: SizedBox(
+            width: 700,
+            height: 480,
+            child: Column(
+              children: [
+                const TabBar(
+                  tabs: [
+                    Tab(text: 'Draft'),
+                    Tab(text: 'Latest request'),
+                  ],
+                ),
+                Expanded(
+                  child: TabBarView(
+                    children: [
+                      _promptPanel(_promptText(draft)),
+                      _promptPanel(
+                        last == null
+                            ? 'Send a message to see its prepared request here. This view is kept only while chat is open.'
+                            : _promptText(last),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _chatPreferences() => showModalBottomSheet<void>(
@@ -675,7 +771,9 @@ class _AiChatScreenState extends ConsumerState<_AiChatPane>
     setState(() => _preparing = true);
     try {
       prepared = await prepareAiInput(message, _inputCapabilities());
-      checkAiInputBudget(prepared, settings);
+      if (_profile!.kind != AiProviderKind.offline) {
+        checkAiInputBudget(prepared, settings);
+      }
     } on AiInputTooLarge catch (error) {
       if (!mounted) return;
       final canSummarize =
@@ -1573,7 +1671,7 @@ class _AiChatScreenState extends ConsumerState<_AiChatPane>
                                   ),
                                   const SizedBox(height: 12),
                                   const Text(
-                                    'A little clarity for your day.',
+                                    'Your personal chat companion. Plan your day, tasks and habits with your own instructions.',
                                     textAlign: TextAlign.center,
                                   ),
                                   const SizedBox(height: 24),
@@ -1842,7 +1940,8 @@ class _AiChatTextDialogState extends State<_AiChatTextDialog> {
           controller: _input,
           autofocus: true,
           maxLines:
-              widget.title == 'Edit message' ||
+              widget.title == 'Your instructions' ||
+                  widget.title == 'Edit message' ||
                   widget.title == 'Review shortened prompt'
               ? 6
               : 1,

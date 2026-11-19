@@ -5,6 +5,7 @@ class AiSettings {
     this.maxOutputTokens,
     this.contextWindowTokens,
     this.customInstructions = '',
+    this.sendAdditionalPrompt = true,
     this.responseLanguage,
     this.inputLanguage,
     this.thinking,
@@ -28,6 +29,7 @@ class AiSettings {
   final int? maxOutputTokens;
   final int? contextWindowTokens;
   final String customInstructions;
+  final bool sendAdditionalPrompt;
   final String? responseLanguage;
   final String? inputLanguage;
   final bool? thinking;
@@ -36,6 +38,7 @@ class AiSettings {
     'maxOutputTokens': maxOutputTokens,
     'contextWindowTokens': contextWindowTokens,
     'customInstructions': customInstructions,
+    'sendAdditionalPrompt': sendAdditionalPrompt,
     'responseLanguage': responseLanguage,
     'inputLanguage': inputLanguage,
     'thinking': thinking,
@@ -45,6 +48,7 @@ class AiSettings {
     maxOutputTokens: json['maxOutputTokens'] as int?,
     contextWindowTokens: json['contextWindowTokens'] as int?,
     customInstructions: json['customInstructions'] as String? ?? '',
+    sendAdditionalPrompt: json['sendAdditionalPrompt'] as bool? ?? true,
     responseLanguage: json['responseLanguage'] as String?,
     inputLanguage: json['inputLanguage'] as String?,
     thinking: json['thinking'] as bool?,

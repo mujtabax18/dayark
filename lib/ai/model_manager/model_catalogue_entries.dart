@@ -2,7 +2,7 @@ part of 'model_catalogue.dart';
 
 // Publisher HF API metadata verified 2026-11-17. Pinned revisions and LFS hashes.
 // Single-file text GGUF only; vision projectors and draft models are excluded.
-List<AiCatalogueModel> _downloadModels() => [
+List<AiCatalogueModel> _pinnedModels() => [
   AiCatalogueModel(
     id: 'gemma4-e4b',
     name: 'Gemma 4 E4B',

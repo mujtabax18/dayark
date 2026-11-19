@@ -157,6 +157,7 @@ AiSettings settingsForCapabilities(
   AiSettings settings,
   AiCapabilities capabilities, {
   bool applyOutputLimit = true,
+  bool applyContextWindow = true,
 }) => AiSettings(
   temperature: capabilities.temperature
       ? (capabilities.maxTemperature != null && settings.temperature != null
@@ -168,10 +169,11 @@ AiSettings settingsForCapabilities(
   maxOutputTokens: applyOutputLimit && capabilities.outputTokenLimit
       ? settings.maxOutputTokens
       : null,
-  contextWindowTokens: capabilities.contextWindow
+  contextWindowTokens: applyContextWindow && capabilities.contextWindow
       ? settings.contextWindowTokens
       : null,
   customInstructions: settings.customInstructions,
+  sendAdditionalPrompt: settings.sendAdditionalPrompt,
   responseLanguage: settings.responseLanguage,
   inputLanguage: settings.inputLanguage,
   thinking: capabilities.thinking ? settings.thinking : null,

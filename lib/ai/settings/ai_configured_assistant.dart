@@ -29,6 +29,7 @@ class AiConfiguredAssistant {
     String? profileId,
     bool containsPrivateContext = false,
     AiCancellationToken? cancellationToken,
+    void Function(List<AiMessage>)? onPreparedMessages,
   }) async {
     AiResponse? response;
     await for (final event in stream(
@@ -38,6 +39,7 @@ class AiConfiguredAssistant {
       profileId: profileId,
       containsPrivateContext: containsPrivateContext,
       cancellationToken: cancellationToken,
+      onPreparedMessages: onPreparedMessages,
     )) {
       response = event.response ?? response;
     }
@@ -52,6 +54,7 @@ class AiConfiguredAssistant {
     String? profileId,
     bool containsPrivateContext = false,
     AiCancellationToken? cancellationToken,
+    void Function(List<AiMessage>)? onPreparedMessages,
   }) async* {
     final preferences = store.load();
     final settings = settingsOverride ?? preferences.settings;
@@ -80,7 +83,8 @@ class AiConfiguredAssistant {
     try {
       final capabilities = provider.capabilitiesFor(profile.modelId);
       final preparedMessage = await prepareAiInput(message, capabilities);
-      checkAiInputBudget(preparedMessage, settings);
+      final nativeContext = profile.kind == AiProviderKind.offline;
+      if (!nativeContext) checkAiInputBudget(preparedMessage, settings);
       final preparedHistory = <AiMessage>[];
       for (final previous in history) {
         cancellationToken?.throwIfCancelled();
@@ -94,6 +98,7 @@ class AiConfiguredAssistant {
           message: preparedMessage,
           history: preparedHistory,
           settings: settings,
+          deferToRuntime: nativeContext,
         );
       } on StateError catch (error) {
         throw AiException(AiErrorCode.invalidRequest, error.message);
@@ -122,6 +127,7 @@ class AiConfiguredAssistant {
               provider.capabilitiesFor(profile.modelId),
               // Reasoning and the answer share Ollama's prediction budget. Let
               // local chat finish naturally; Stop remains available.
+              applyContextWindow: !nativeContext,
               applyOutputLimit:
                   profile.kind != AiProviderKind.ollama &&
                   profile.kind != AiProviderKind.offline,
@@ -132,6 +138,7 @@ class AiConfiguredAssistant {
                 (context?.excerpts.isNotEmpty ?? false),
             allowPrivateContextOnline: preferences.allowPrivateContextOnline,
             cancellationToken: cancellationToken,
+            onPreparedMessages: onPreparedMessages,
           );
       await for (final event in events) {
         final response = event.response;

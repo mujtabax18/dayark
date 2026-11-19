@@ -33,7 +33,9 @@ Future<AiLocalModels> _create() async {
 }
 
 class NativeAiLocalModels extends AiLocalModels {
-  NativeAiLocalModels(this.manager, {this.hardwareProbe = detectAiHardware});
+  NativeAiLocalModels(this.manager, {this.hardwareProbe = detectAiHardware}) {
+    provider.onPerformanceChanged = notifyListeners;
+  }
   final Future<AiHardwareReport> Function({required String storagePath})
   hardwareProbe;
   final AiLocalModelManager manager;
@@ -50,15 +52,28 @@ class NativeAiLocalModels extends AiLocalModels {
   @override
   String? loadedId;
   @override
+  String? downloadingId;
+  @override
+  int downloadedBytes = 0;
+  @override
+  int? downloadTotalBytes;
+  @override
   String? status;
   @override
   String? benchmark;
   AiCancellationToken? _token;
   @override
   bool get supported => hardware?.runtimeSupported != false;
-  Future<void> _run(Future<void> Function(AiCancellationToken) action) async {
+  Future<void> _run(
+    Future<void> Function(AiCancellationToken) action, {
+    AiCatalogueModel? download,
+  }) async {
     if (busy) return;
     busy = true;
+    downloadingId = download?.id;
+    downloadedBytes = 0;
+    downloadTotalBytes =
+        download?.artifact?.bytes ?? download?.estimatedDiskBytes;
     status = null;
     progress = null;
     final token = _token = AiCancellationToken();
@@ -73,6 +88,9 @@ class NativeAiLocalModels extends AiLocalModels {
       status = 'Unable to complete model operation. Check model integrity, free storage and runtime support.';
     } finally {
       busy = false;
+      downloadingId = null;
+      downloadedBytes = 0;
+      downloadTotalBytes = null;
       _token = null;
       progress = null;
       notifyListeners();
@@ -85,6 +103,7 @@ class NativeAiLocalModels extends AiLocalModels {
     bytes: m.bytes,
     revision: m.revision,
     sha256: m.sha256,
+    detectedModel: m.model,
   );
   @override
   Future<void> refresh() => _run((token) async {
@@ -104,6 +123,8 @@ class NativeAiLocalModels extends AiLocalModels {
       allowDownload: true,
       cancellationToken: token,
       onProgress: (received, total) {
+        downloadedBytes = received;
+        downloadTotalBytes = total;
         progress = received / total;
         if (received == total ||
             updates.elapsedMilliseconds - lastNotification >= 100) {
@@ -116,11 +137,12 @@ class NativeAiLocalModels extends AiLocalModels {
     installed = [...installed.where((m) => m.id != model.id), _record(record)];
     hardware = await hardwareProbe(storagePath: manager.directory.path);
     status = '${model.name} installed and verified.';
-  });
+  }, download: model);
   @override
   Future<void> load(String id) => _run((token) async {
     loadedId = null;
-    await manager.load(id, cancellationToken: token);
+    final record = await manager.load(id, cancellationToken: token);
+    installed = [...installed.where((m) => m.id != id), _record(record)];
     loadedId = id;
     status = 'Model loaded.';
   });

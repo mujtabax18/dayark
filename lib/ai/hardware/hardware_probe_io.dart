@@ -71,9 +71,8 @@ Future<AiHardwareReport> detect(String path) async {
         ).firstMatch(info)?[1] ??
         cpu;
     if (info.contains('GenuineIntel') || info.contains('AuthenticAMD')) {
-      supported = RegExp(r'\bavx2\b').hasMatch(info);
-      if (supported == false) {
-        notes.add('Pinned x86 CPU runtime requires AVX2; this CPU lacks it.');
+      if (!RegExp(r'\bavx2\b').hasMatch(info)) {
+        notes.add('CPU has no AVX2; native backend selection determines compatibility.');
       }
     }
     final rows = values[2]?.split('\n');

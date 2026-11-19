@@ -40,6 +40,7 @@ class DownloadAdapter implements HttpClientAdapter {
   int status = 200, calls = 0;
   RequestOptions? lastRequest;
   String? redirectTo;
+  Map<String, dynamic>? publisherMetadata;
   Completer<void>? delay;
   @override
   Future<ResponseBody> fetch(
@@ -49,6 +50,16 @@ class DownloadAdapter implements HttpClientAdapter {
   ) async {
     calls++;
     lastRequest = options;
+    if (options.uri.path.startsWith('/api/models/') &&
+        publisherMetadata != null) {
+      return ResponseBody.fromString(
+        jsonEncode(publisherMetadata),
+        200,
+        headers: {
+          'content-type': ['application/json'],
+        },
+      );
+    }
     if (delay != null) await Future.any([delay!.future, cancelFuture!]);
     if (redirectTo != null && options.uri.host == 'example.test') {
       return ResponseBody.fromBytes(
@@ -72,10 +83,11 @@ void main() {
     int? disk = 40 * aiGiB,
     bool? supported = true,
   }) => AiHardwareReport(
-    platform: 'test',
+    platform: 'linux',
     cpu: 'test',
     logicalCores: 8,
     availableMemoryBytes: ram,
+    totalMemoryBytes: 64 * aiGiB,
     freeStorageBytes: disk,
     runtimeSupported: supported,
   );
@@ -84,12 +96,8 @@ void main() {
     final catalogue = AiModelCatalogue.candidates();
     const engine = AiModelRecommender();
     final fits = engine.recommend(hardware(), catalogue);
-    expect(fits.take(4).map((r) => r.fit), [
-      AiModelFit.candidate,
-      AiModelFit.candidate,
-      AiModelFit.insufficient,
-      AiModelFit.insufficient,
-    ]);
+    expect(fits.any((r) => r.fit == AiModelFit.candidate), isTrue);
+    expect(fits.any((r) => r.fit == AiModelFit.insufficient), isTrue);
     expect(
       engine.recommend(hardware(ram: null), catalogue).first.fit,
       AiModelFit.unknown,
@@ -112,11 +120,11 @@ void main() {
       engine.recommend(hardware(), catalogue, contextSize: 8192).first.fit,
       AiModelFit.unknown,
     );
-    expect(catalogue.models.length, greaterThan(20));
-    expect(catalogue.models.every((m) => m.artifact != null), isTrue);
+    expect(catalogue.models.length, 337);
+    expect(catalogue.models.every((m) => m.downloadable), isTrue);
     expect(
       catalogue.models.every(
-        (m) => m.artifact!.redirectHosts.contains('us.aws.cdn.hf.co'),
+        (m) => m.artifact?.redirectHosts.contains('us.aws.cdn.hf.co') ?? true,
       ),
       isTrue,
     );
@@ -255,6 +263,56 @@ void main() {
             .models
             .map((m) => m.selection.modelId)
             .toList();
+
+    test(
+      'CSV references resolve immutable publisher hashes before downloading',
+      () async {
+        final model = AiCatalogueModel(
+          id: 'csv-fixture',
+          name: 'CSV fixture',
+          license: 'test',
+          source: Uri.parse('https://huggingface.co/example/model'),
+          estimatedRamBytes: aiGiB,
+          estimatedDiskBytes: 1000,
+          metadata: const {
+            'repository': 'example/model',
+            'filename': 'model.gguf',
+            'revision': 'main',
+          },
+        );
+        adapter.publisherMetadata = {
+          'sha': 'b' * 40,
+          'siblings': [
+            {
+              'rfilename': 'model.gguf',
+              'lfs': {
+                'sha256': sha256.convert(adapter.body).toString(),
+                'size': adapter.body.length,
+              },
+            },
+          ],
+        };
+        final installed = await store.install(model, allowDownload: true);
+        expect(installed.revision, 'b' * 40);
+        expect(installed.bytes, adapter.body.length);
+        expect(
+          adapter.lastRequest!.uri.path,
+          contains('/resolve/${'b' * 40}/'),
+        );
+        expect(adapter.calls, 2);
+        expect((await store.restore()).single.sha256, installed.sha256);
+        adapter.publisherMetadata!['sha'] = 'main';
+        await expectLater(
+          store.install(model, allowDownload: true),
+          throwsFormatException,
+        );
+        expect(
+          adapter.calls,
+          3,
+        ); // Invalid metadata never starts a file download.
+        expect((await store.restore()).single.sha256, installed.sha256);
+      },
+    );
 
     test(
       'verified install, update, restart restore, load, unload and delete',

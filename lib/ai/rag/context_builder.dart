@@ -26,17 +26,19 @@ class ContextBuilder {
     int outputTokens = 1024,
     int instructionBytes = 1024,
     bool summarize = false,
+    bool enforceInputLimit = true,
   }) {
     var remaining =
         contextTokens -
         outputTokens -
         instructionBytes -
         utf8.encode(message.text).length;
-    if (remaining < 0) {
+    if (remaining < 0 && enforceInputLimit) {
       throw StateError(
         'The message, converted file text or voice transcript exceeds the context limit. Please use a smaller input, summarize it in parts, or increase the context size in AI settings.',
       );
     }
+    remaining = remaining.clamp(0, 1 << 30);
     final selected = <RetrievalHit>[];
     final excerpts = <Map<String, Object>>[];
     final retrievalBudget = remaining ~/ 2;
@@ -107,10 +109,11 @@ class ContextBuilder {
     // Enforce the final encoded size too: control characters and JSON quoting
     // can expand an extractive summary beyond its raw-text budget.
     final totalBudget =
-        contextTokens -
-        outputTokens -
-        instructionBytes -
-        utf8.encode(message.text).length;
+        (contextTokens -
+                outputTokens -
+                instructionBytes -
+                utf8.encode(message.text).length)
+            .clamp(0, 1 << 30);
     int cost() =>
         utf8.encode(context).length +
         recent.fold<int>(

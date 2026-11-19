@@ -118,7 +118,7 @@ class AiDefaults {
   Map<String, dynamic> toJson() => {
     'version': 1,
     'providers': providers.map((p) => p.toJson()).toList(),
-    'catalogueRevision': 2,
+    'catalogueRevision': 5,
     'catalogue': catalogue.models.map(catalogueModelToJson).toList(),
   };
   factory AiDefaults.fromJson(Map<String, dynamic> j) {
@@ -148,6 +148,7 @@ Map<String, dynamic> catalogueModelToJson(AiCatalogueModel m) => {
   'contextSize': m.contextSize,
   'quantization': m.quantization,
   'languages': m.languages,
+  'metadata': m.metadata,
   if (m.artifact case final a?)
     'artifact': {
       'url': a.url.toString(),
@@ -177,6 +178,7 @@ AiCatalogueModel catalogueModelFromJson(Map<String, dynamic> j) {
     contextSize: j['contextSize'] as int,
     quantization: j['quantization'] as String,
     languages: (j['languages'] as List).cast<String>(),
+    metadata: (j['metadata'] as Map?)?.cast<String, String>() ?? const {},
     artifact: a == null
         ? null
         : AiModelArtifact(

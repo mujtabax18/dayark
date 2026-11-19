@@ -23,13 +23,23 @@ class AiInputTooLarge extends AiException {
   final int bytes, budget, contextTokens;
 }
 
-/// Conservative UTF-8 budgeting, shared with the memory context builder.
+/// Byte allowance for only the system messages that will actually be sent.
+int aiAdditionalPromptBytes(AiSettings settings) => const PromptManager()
+    .build(
+      settings: settings,
+      history: const [],
+      message: AiMessage(role: AiRole.user, text: 'budget probe'),
+    )
+    .where((m) => m.role == AiRole.system)
+    .fold<int>(0, (bytes, m) => bytes + utf8.encode(m.text).length + 32);
+
+/// Conservative UTF-8 budgeting for providers without a local tokenizer.
+/// Local chat validates the rendered prompt with the loaded model instead.
 int aiInputBudget(AiSettings settings) =>
     (settings.contextWindowTokens ?? 4096) -
     (settings.maxOutputTokens ?? 1024) -
-    1024 -
-    utf8.encode(settings.customInstructions).length -
-    utf8.encode(PromptManager.retrievalInstructions).length;
+    64 -
+    aiAdditionalPromptBytes(settings);
 
 void checkAiInputBudget(AiMessage prepared, AiSettings settings) {
   final budget = aiInputBudget(settings).clamp(0, 1 << 30);

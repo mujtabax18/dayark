@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import '../core/ai_provider.dart';
 import '../hardware/ai_hardware.dart';
 import '../model_manager/model_catalogue.dart';
+import '../providers/offline/offline_runtime.dart';
 
 class AiLocalInstallation {
   const AiLocalInstallation({
@@ -11,9 +12,11 @@ class AiLocalInstallation {
     required this.bytes,
     required this.revision,
     required this.sha256,
+    this.detectedModel,
   });
   final String id, name, revision, sha256;
   final int bytes;
+  final AiLocalModel? detectedModel;
 }
 
 /// Shared app session. Leaving Settings never frees an engine used by chat.
@@ -24,6 +27,9 @@ abstract class AiLocalModels extends ChangeNotifier {
   bool get busy;
   double? get progress;
   String? get loadedId;
+  String? get downloadingId => null;
+  int get downloadedBytes => 0;
+  int? get downloadTotalBytes => null;
   String? get status;
   String? get benchmark;
   bool get supported;

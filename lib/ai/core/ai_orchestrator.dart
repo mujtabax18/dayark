@@ -27,6 +27,7 @@ class AiOrchestrator {
     bool containsPrivateContext = false,
     bool allowPrivateContextOnline = false,
     AiCancellationToken? cancellationToken,
+    void Function(List<AiMessage>)? onPreparedMessages,
   }) async {
     cancellationToken?.throwIfCancelled();
     final effectiveSettings = settings ?? AiSettings();
@@ -44,6 +45,7 @@ class AiOrchestrator {
         'Expected a user message and user/assistant history.',
       );
     }
+    onPreparedMessages?.call(messages);
     return gateway.generate(
       AiRequest(
         selection: selection,
@@ -68,6 +70,7 @@ class AiOrchestrator {
     bool containsPrivateContext = false,
     bool allowPrivateContextOnline = false,
     AiCancellationToken? cancellationToken,
+    void Function(List<AiMessage>)? onPreparedMessages,
   }) async* {
     cancellationToken?.throwIfCancelled();
     final effective = settings ?? AiSettings();
@@ -85,6 +88,7 @@ class AiOrchestrator {
         'Expected user input and user/assistant history.',
       );
     }
+    onPreparedMessages?.call(messages);
     yield* gateway.stream(
       AiRequest(
         selection: selection,

@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
 import '../core/ai_capabilities.dart';
+import '../model_manager/model_catalogue.dart';
 import '../widgets/ai_choice_picker.dart';
 import '../memory/memory_screen.dart';
 import '../core/ai_gateway.dart';
@@ -22,7 +23,8 @@ import 'ai_settings.dart';
 import 'ai_settings_store.dart';
 
 class AiSettingsScreen extends StatefulWidget {
-  const AiSettingsScreen({super.key, this.store, this.localModels});
+  const AiSettingsScreen({super.key, this.store, this.localModels, this.promptPreview});
+  final VoidCallback? promptPreview;
   final AiSettingsStore? store;
   final Future<AiLocalModels> Function()? localModels;
   @override
@@ -49,6 +51,7 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
       _customLanguage = TextEditingController();
   String? _id;
   bool _thinking = false;
+  bool _sendAdditionalPrompt = true;
   String _language = 'Automatic';
   AiProviderKind _kind = AiProviderKind.offline;
   bool _online = false, _private = false, _busy = true, _clearSecret = false;
@@ -108,6 +111,7 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
         _context.text =
             s.contextWindowTokens?.toString() ?? '${d.contextTokens}';
         _instructions.text = s.customInstructions;
+        _sendAdditionalPrompt = s.sendAdditionalPrompt;
         _inputLanguage.text = s.inputLanguage ?? '';
         _language = s.responseLanguage == null
             ? 'Automatic'
@@ -169,8 +173,11 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
     final id = await Navigator.push<String>(
       context,
       MaterialPageRoute(
-        builder: (_) =>
-            AiLocalModelsScreen(models: models, defaults: _defaults),
+        builder: (_) => AiLocalModelsScreen(
+          models: models,
+          defaults: _defaults,
+          selectedId: _kind == AiProviderKind.offline ? _model.text : null,
+        ),
       ),
     );
     if (id != null && mounted) {
@@ -196,9 +203,18 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
     });
   }
 
+  Iterable<String> get _localCatalogueChoices {
+    final hardware = _local?.hardware;
+    if (hardware == null) return _defaults.catalogue.models.map((m) => m.id);
+    return AiModelFamily.grouped(
+      hardware,
+      _defaults.catalogue,
+    ).expand((f) => f.models).map((m) => m.id);
+  }
+
   List<String> get _modelChoices => {
     ...(_kind == AiProviderKind.offline
-        ? _defaults.catalogue.models.map((m) => m.id)
+        ? _localCatalogueChoices
         : _defaults.forKind(_kind).models),
     if (_kind == AiProviderKind.offline && _local != null)
       ..._local!.installed.map((m) => m.id),
@@ -211,11 +227,16 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
         .where((m) => m.id == id)
         .firstOrNull;
     final installed = _local?.installed.any((m) => m.id == id) ?? false;
-    return '${model?.name ?? id} · ${installed
+    final hardware = _local?.hardware;
+    final fit = hardware == null || model == null ? null : const AiModelRecommender().classify(hardware, model,
+        installed: _local?.installed.where((m) => m.id == id).firstOrNull?.detectedModel);
+    final warning = fit == null ? '' : ' · ${fit.label}';
+
+    return '${model?.name ?? id}${model == null ? '' : ' · ${model.quantization}'} · ${installed
         ? 'installed'
-        : model?.artifact != null
+        : model?.downloadable == true
         ? 'download available'
-        : 'not installed'}';
+        : 'not installed'}$warning';
   }
 
   AiProviderProfile _profile() => AiProviderProfile(
@@ -287,11 +308,12 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
       }
       final settings = AiSettings(
         temperature: double.tryParse(_temperature.text),
-        maxOutputTokens: int.tryParse(_output.text),
-        contextWindowTokens: _capabilities.contextWindow
+        maxOutputTokens: _kind == AiProviderKind.offline ? null : int.tryParse(_output.text),
+        contextWindowTokens: _kind != AiProviderKind.offline && _capabilities.contextWindow
             ? int.tryParse(_context.text)
             : null,
         customInstructions: _instructions.text,
+        sendAdditionalPrompt: _sendAdditionalPrompt,
         thinking: _capabilities.thinking ? _thinking : null,
         inputLanguage: _inputLanguage.text.trim().isEmpty
             ? null
@@ -520,6 +542,10 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
   }
 
   void _back() {
+    if (widget.promptPreview != null && Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+      return;
+    }
     final desktop = DesktopNavigationScope.maybeOf(context);
     if (MediaQuery.sizeOf(context).width >= 1100 && desktop != null) {
       desktop.onOpenRoute(RoutesStr.settings);
@@ -885,7 +911,9 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
                             8192,
                             16384,
                           ]),
-                        if (caps.contextWindow)
+                        if (_kind == AiProviderKind.offline)
+                          ListTile(contentPadding: EdgeInsets.zero, leading: const Icon(Icons.auto_awesome), title: const Text('Automatic context window'), subtitle: Text(_local?.installed.where((m) => m.id == _model.text).firstOrNull?.detectedModel == null ? 'Detected from the GGUF file after installation.' : '${_local!.installed.firstWhere((m) => m.id == _model.text).detectedModel!.contextSize} tokens · model and device detected')),
+                        if (caps.contextWindow && _kind != AiProviderKind.offline)
                           _tokenPicker(_context, 'Context window tokens', [
                             2048,
                             4096,
@@ -897,55 +925,76 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
                           onPressed: () => setState(_behaviorDefaults),
                           child: const Text('Apply provider defaults'),
                         ),
-                        _field(_instructions, 'Custom instructions', lines: 4),
-                        const Text(
-                          'Custom instructions remain subject to DayArk permissions.',
-                        ),
-                        DropdownButtonFormField<String>(
-                          key: ValueKey('input:${_inputLanguage.text}'),
-                          initialValue: _inputLanguage.text,
-                          decoration: const InputDecoration(
-                            labelText: 'Input language',
+                        SwitchListTile.adaptive(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('Send additional prompt'),
+                          subtitle: const Text(
+                            'Add DayArk instructions, custom instructions and language preferences. Turn off for plain chat. Reference instructions are included only when memory or documents supply context.',
                           ),
-                          items:
-                              {
-                                    '': 'Automatic',
-                                    'English': 'English',
-                                    'Urdu': 'Urdu',
-                                    'Roman Urdu': 'Roman Urdu',
-                                    if (_inputLanguage.text.isNotEmpty)
-                                      _inputLanguage.text: _inputLanguage.text,
-                                  }.entries
-                                  .map(
-                                    (e) => DropdownMenuItem(
-                                      value: e.key,
-                                      child: Text(e.value),
-                                    ),
-                                  )
-                                  .toList(),
-                          onChanged: (v) =>
-                              setState(() => _inputLanguage.text = v!),
+                          value: _sendAdditionalPrompt,
+                          onChanged: (value) =>
+                              setState(() => _sendAdditionalPrompt = value),
                         ),
-                        DropdownButtonFormField<String>(
-                          key: ValueKey(_language),
-                          initialValue: _language,
-                          decoration: const InputDecoration(
-                            labelText: 'Response language',
-                          ),
-                          items: _languages
-                              .map(
-                                (l) =>
-                                    DropdownMenuItem(value: l, child: Text(l)),
-                              )
-                              .toList(),
-                          onChanged: (v) => setState(() => _language = v!),
-                        ),
-                        if (_language == 'Custom')
+                        if (widget.promptPreview != null)
+                          ListTile(contentPadding: EdgeInsets.zero, leading: const Icon(Icons.code_rounded), title: const Text('View prompts'), subtitle: const Text('Inspect draft and latest prepared request'), onTap: widget.promptPreview),
+                        if (_sendAdditionalPrompt) ...[
                           _field(
-                            _customLanguage,
-                            'Custom response language',
-                            required: true,
+                            _instructions,
+                            'Custom instructions',
+                            lines: 4,
                           ),
+                          const Text(
+                            'Custom instructions remain subject to DayArk permissions.',
+                          ),
+                          DropdownButtonFormField<String>(
+                            key: ValueKey('input:${_inputLanguage.text}'),
+                            initialValue: _inputLanguage.text,
+                            decoration: const InputDecoration(
+                              labelText: 'Input language',
+                            ),
+                            items:
+                                {
+                                      '': 'Automatic',
+                                      'English': 'English',
+                                      'Urdu': 'Urdu',
+                                      'Roman Urdu': 'Roman Urdu',
+                                      if (_inputLanguage.text.isNotEmpty)
+                                        _inputLanguage.text:
+                                            _inputLanguage.text,
+                                    }.entries
+                                    .map(
+                                      (e) => DropdownMenuItem(
+                                        value: e.key,
+                                        child: Text(e.value),
+                                      ),
+                                    )
+                                    .toList(),
+                            onChanged: (v) =>
+                                setState(() => _inputLanguage.text = v!),
+                          ),
+                          DropdownButtonFormField<String>(
+                            key: ValueKey(_language),
+                            initialValue: _language,
+                            decoration: const InputDecoration(
+                              labelText: 'Response language',
+                            ),
+                            items: _languages
+                                .map(
+                                  (l) => DropdownMenuItem(
+                                    value: l,
+                                    child: Text(l),
+                                  ),
+                                )
+                                .toList(),
+                            onChanged: (v) => setState(() => _language = v!),
+                          ),
+                          if (_language == 'Custom')
+                            _field(
+                              _customLanguage,
+                              'Custom response language',
+                              required: true,
+                            ),
+                        ],
                         const SizedBox(height: 24),
                       ],
                     ),

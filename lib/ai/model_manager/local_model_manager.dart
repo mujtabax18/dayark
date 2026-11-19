@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
@@ -11,6 +12,9 @@ import '../core/ai_error.dart';
 import '../providers/offline/offline_provider.dart';
 import '../providers/offline/offline_runtime.dart';
 import 'model_catalogue.dart';
+import 'gguf_metadata.dart';
+import '../hardware/hardware_probe.dart';
+import '../hardware/ai_hardware.dart';
 
 typedef AiDownloadProgress = void Function(int received, int total);
 
@@ -41,6 +45,7 @@ class AiLocalModelManager {
   final OfflineAiProvider provider;
   final Dio _dio;
   final bool _ownsDio;
+  AiHardwareReport? _hardware;
   bool _busy = false;
   bool _closed = false;
 
@@ -102,6 +107,34 @@ class AiLocalModelManager {
     token.throwIfCancelled();
   }
 
+  Future<AiLocalModel> _detectModel({required String id, required String name, required String path, required String metadataPath}) async {
+    final metadata = await GgufMetadata.read(metadataPath);
+    final hardware = _hardware ??= await detectAiHardware(storagePath: directory.path);
+    final context = metadata.chooseContext(hardware.availableMemoryBytes, hardware.totalMemoryBytes);
+    AiLocalPerformance? performance;
+    try {
+      final saved = jsonDecode(await File('$path.perf').readAsString()) as Map;
+      final previousContext = saved['contextSize'] as int;
+      if (previousContext > 0) {
+        performance = AiLocalPerformance(contextSize: previousContext,
+          tokensPerSecond: (saved['tokensPerSecond'] as num?)?.toDouble(),
+          peakProcessRssBytes: saved['peakProcessRssBytes'] as int?,
+          loadMilliseconds: saved['loadMilliseconds'] as int?);
+      }
+    } catch (_) { /* No previous measurements. */ }
+    final layers = metadata.layerCount;
+    final shared = ['android', 'ios', 'macos'].contains(hardware.platform);
+    final gpuBudget = hardware.vramBytes != null ? hardware.vramBytes! ~/ 2
+        : shared ? (hardware.availableMemoryBytes ?? 0) ~/ 6 : 0;
+    final gpuLayers = layers == null ? 0 : math.min(layers, gpuBudget * layers ~/ metadata.bytes);
+    return AiLocalModel(id: id, name: name, path: path, contextSize: context,
+      gpuLayers: gpuLayers,
+      nativeContextSize: metadata.nativeContext, architecture: metadata.architecture,
+      fileType: metadata.fileType,
+      estimatedMemoryBytes: metadata.bytes + (metadata.kvBytesPerToken ?? 0) * context + metadata.bytes ~/ 5,
+      performance: performance);
+  }
+
   Future<AiInstalledModel?> _read(
     String id,
     AiCancellationToken token, {
@@ -124,11 +157,11 @@ class AiLocalModelManager {
     }
     if (verifyContents) await _verify(file, hash, data['bytes'] as int, token);
     return AiInstalledModel(
-      model: AiLocalModel(
+      model: verifyContents ? await _detectModel(id: id, name: data['name'] as String, path: file.path, metadataPath: file.path) : AiLocalModel(
         id: id,
         path: file.path,
         name: data['name'] as String,
-        contextSize: data['contextSize'] as int,
+        contextSize: data['contextSize'] as int?,
       ),
       revision: data['revision'] as String,
       sha256: hash,
@@ -180,6 +213,7 @@ class AiLocalModelManager {
   }) => _exclusive(() async {
     final token = cancellationToken ?? AiCancellationToken();
     await directory.create(recursive: true);
+    _hardware = await detectAiHardware(storagePath: directory.path);
     final installed = <AiInstalledModel>[];
     await for (final entity in directory.list(followLinks: false)) {
       token.throwIfCancelled();
@@ -198,6 +232,67 @@ class AiLocalModelManager {
     return List.unmodifiable(installed);
   });
 
+  /// Resolve mutable CSV references through publisher metadata, then download
+  /// only the immutable commit and verify its declared LFS hash and exact size.
+  Future<AiModelArtifact> _resolveArtifact(
+    AiCatalogueModel entry,
+    AiCancellationToken token,
+  ) async {
+    if (entry.artifact case final pinned?) return pinned;
+    final repository = entry.repository;
+    final filename = entry.filename;
+    if (repository == null ||
+        filename == null ||
+        !RegExp(r'^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$').hasMatch(repository) ||
+        !RegExp(r'^[A-Za-z0-9_.-]+\.gguf$').hasMatch(filename)) {
+      throw ArgumentError(
+        'A pinned artifact or valid publisher reference is required.',
+      );
+    }
+    final cancel = CancelToken();
+    final remove = token.onCancel(() => cancel.cancel());
+    try {
+      final response = await _dio.get<Map<String, dynamic>>(
+        'https://huggingface.co/api/models/$repository/revision/${Uri.encodeComponent(entry.metadata['revision'] ?? 'main')}',
+        queryParameters: {'blobs': 'true'},
+        options: Options(
+          followRedirects: false,
+          receiveTimeout: const Duration(seconds: 30),
+        ),
+        cancelToken: cancel,
+      );
+      token.throwIfCancelled();
+      final data = response.data!;
+      final revision = data['sha'] as String;
+      if (!RegExp(r'^[a-f0-9]{40}$').hasMatch(revision)) {
+        throw const FormatException('Publisher commit is missing.');
+      }
+      final file = (data['siblings'] as List)
+          .cast<Map>()
+          .where((f) => f['rfilename'] == filename)
+          .single;
+      final lfs = file['lfs'] as Map;
+      return AiModelArtifact(
+        url: Uri.parse(
+          'https://huggingface.co/$repository/resolve/$revision/$filename',
+        ),
+        sha256: lfs['sha256'] as String,
+        bytes: lfs['size'] as int,
+        revision: revision,
+        redirectHosts: const [
+          'huggingface.co',
+          'cas-bridge.xethub.hf.co',
+          'us.aws.cdn.hf.co',
+        ],
+      );
+    } catch (_) {
+      token.throwIfCancelled();
+      rethrow;
+    } finally {
+      remove();
+    }
+  }
+
   /// Content-addressed file + atomic manifest commit keeps an old revision usable
   /// if a download, verification, cancellation or replacement fails.
   Future<AiInstalledModel> install(
@@ -214,10 +309,7 @@ class AiLocalModelManager {
         'Model download requires authorization.',
       );
     }
-    final artifact = entry.artifact;
-    if (artifact == null) {
-      throw ArgumentError('A verified publisher artifact is required.');
-    }
+    final artifact = await _resolveArtifact(entry, token);
     _validateId(entry.id);
     await directory.create(recursive: true);
     final hash = artifact.sha256.toLowerCase();
@@ -230,6 +322,7 @@ class AiLocalModelManager {
     final remove = token.onCancel(() => cancel.cancel());
     var committed = false;
     try {
+      onProgress?.call(0, artifact.bytes);
       final response = await _download(artifact, cancel);
       final sink = staging.openWrite();
       var received = 0;
@@ -250,13 +343,9 @@ class AiLocalModelManager {
         await sink.close();
       }
       await _verify(staging, hash, artifact.bytes, token);
+      _hardware = await detectAiHardware(storagePath: directory.path);
       final record = AiInstalledModel(
-        model: AiLocalModel(
-          id: entry.id,
-          name: entry.name,
-          path: target.path,
-          contextSize: entry.contextSize,
-        ),
+        model: await _detectModel(id: entry.id, name: entry.name, path: target.path, metadataPath: staging.path),
         revision: artifact.revision,
         sha256: hash,
         bytes: artifact.bytes,
@@ -264,7 +353,9 @@ class AiLocalModelManager {
       await temporaryManifest.writeAsString(
         jsonEncode({
           'name': entry.name,
-          'contextSize': entry.contextSize,
+          'contextSize': record.model.contextSize,
+          'nativeContextSize': record.model.nativeContextSize,
+          'architecture': record.model.architecture,
           'sha256': hash,
           'bytes': artifact.bytes,
           'revision': artifact.revision,
@@ -289,6 +380,8 @@ class AiLocalModelManager {
       if (old != null && old.model.path != target.path) {
         try {
           await File(old.model.path).delete();
+          final stats = File('${old.model.path}.perf');
+          if (await stats.exists()) await stats.delete();
         } catch (_) {
           /* Orphan is harmless. */
         }
@@ -328,6 +421,8 @@ class AiLocalModelManager {
       await _manifest(id).delete();
       try {
         await File(record.model.path).delete();
+        final stats = File('${record.model.path}.perf');
+        if (await stats.exists()) await stats.delete();
       } catch (_) {
         /* Retry orphan cleanup externally. */
       }
@@ -335,7 +430,7 @@ class AiLocalModelManager {
     }, cancellationToken: token);
   });
 
-  Future<void> load(String id, {AiCancellationToken? cancellationToken}) =>
+  Future<AiInstalledModel> load(String id, {AiCancellationToken? cancellationToken}) =>
       _exclusive(() async {
         final token = cancellationToken ?? AiCancellationToken();
         final record = await _read(id, token);
@@ -346,6 +441,7 @@ class AiLocalModelManager {
           cancellationToken: token,
         );
         await provider.loadModel(id, cancellationToken: token);
+        return record;
       });
   Future<void> unload() => _exclusive(() => provider.unloadModel());
   void close() {
