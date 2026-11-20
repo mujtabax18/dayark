@@ -259,7 +259,7 @@ void main() {
     final pending = chat.send(user('Original'), profileId: 'offline');
     await started.future;
     expect(chat.thinkingText, 'Checking the question');
-    expect(chat.activity, 'Receiving response…');
+    expect(chat.activity, 'Generating response…');
     expect(chat.busy, isTrue);
     chat.stop();
     await pending;

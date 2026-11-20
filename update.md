@@ -1,3 +1,19 @@
+# AI Chat startup and mobile navigation fix
+
+Opening AI Chat no longer waits for native model verification, hardware probing or memory initialization. These services start only when a request needs them. Required storage startup has a bounded timeout with Retry, history loads independently of the chat controls, and Stop remains responsive while model preparation waits.
+
+Back to DayArk is inside the chat sidebar/drawer, including while loading or showing an error. The mobile toolbar uses the menu button to open that drawer. The sidebar action exits through the application navigator instead of the nested chat navigator; direct chat links return to Home.
+
+Regression tests cover the real engine setup path with unresolved native services, loading-state sidebar navigation, timeout/retry with a late result, cancellable model preparation, and direct-link navigation. The full Flutter suite passed all 224 tests; AI source and tests analyze without issues.
+
+# AI Workspace — 2026-11-20
+
+The existing Flutter AI module now has a dedicated desktop workspace and compact mobile chat, with performance profiles, bounded output, preserved partial replies, cancellation-safe redirects, sequential queues, saved responses, prompt templates and response versions. Model management now includes search, favourites, filters, comparison and local GGUF import. Existing provider permissions, model integrity verification, conversation IDs and paired-device synchronization are retained.
+
+The implementation reuses the existing controller, provider, Drift store and shared offline runtime. Chat and model-manager view code is split into focused library parts instead of adding parallel mobile/desktop business logic. Optional JSON fields provide additive storage compatibility without a Drift schema change.
+
+Read [the implementation audit](docs/AI_WORKSPACE.md) for architecture, migration details, measured-versus-unavailable telemetry, validation, modified files and the explicitly listed remaining portions of the broader brief. Physical-device inference speed, thermal/battery behavior and backend comparisons still need hardware validation; no token/s improvement is claimed from automated tests.
+
 # Dayark – Local Sync Update
 
 ### What's Changed

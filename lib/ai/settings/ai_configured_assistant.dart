@@ -10,6 +10,7 @@ import '../core/ai_orchestrator.dart';
 import '../core/ai_provider.dart';
 import '../models/ai_models.dart';
 import '../providers/http/http_ai_provider.dart';
+import '../providers/offline/offline_provider.dart';
 import 'ai_preferences.dart';
 import 'ai_settings.dart';
 import 'ai_local_models_factory.dart';
@@ -80,26 +81,43 @@ class AiConfiguredAssistant {
       credentials: () => store.credential(profile.id),
       offline: offline ?? local?.provider,
     );
+    if (provider is OfflineAiProvider) {
+      provider.idleTimeout = settings.idleTimeoutMinutes <= 0
+          ? null
+          : Duration(minutes: settings.idleTimeoutMinutes);
+    }
     try {
       final capabilities = provider.capabilitiesFor(profile.modelId);
-      final preparedMessage = await prepareAiInput(message, capabilities);
+      final preparedMessage = await prepareAiInput(
+        message,
+        capabilities,
+        cancellationToken: cancellationToken,
+      );
       final nativeContext = profile.kind == AiProviderKind.offline;
       if (!nativeContext) checkAiInputBudget(preparedMessage, settings);
       final preparedHistory = <AiMessage>[];
       for (final previous in history) {
         cancellationToken?.throwIfCancelled();
-        preparedHistory.add(await prepareAiInput(previous, capabilities));
+        preparedHistory.add(
+          await prepareAiInput(
+            previous,
+            capabilities,
+            cancellationToken: cancellationToken,
+          ),
+        );
       }
       // Enforce the binary request limit across current and historical turns.
       prepareAiAttachments([...preparedHistory, preparedMessage]);
       final AiBuiltContext? context;
       try {
-        context = await memory?.build(
-          message: preparedMessage,
-          history: preparedHistory,
-          settings: settings,
-          deferToRuntime: nativeContext,
-        );
+        context = !settings.useMemory
+            ? null
+            : await memory?.build(
+                message: preparedMessage,
+                history: preparedHistory,
+                settings: settings,
+                deferToRuntime: nativeContext,
+              );
       } on StateError catch (error) {
         throw AiException(AiErrorCode.invalidRequest, error.message);
       }
@@ -125,12 +143,8 @@ class AiConfiguredAssistant {
             settings: settingsForCapabilities(
               settings,
               provider.capabilitiesFor(profile.modelId),
-              // Reasoning and the answer share Ollama's prediction budget. Let
-              // local chat finish naturally; Stop remains available.
               applyContextWindow: !nativeContext,
-              applyOutputLimit:
-                  profile.kind != AiProviderKind.ollama &&
-                  profile.kind != AiProviderKind.offline,
+              applyOutputLimit: true,
             ),
             allowRemoteProcessing: preferences.allowOnlineProcessing,
             containsPrivateContext:

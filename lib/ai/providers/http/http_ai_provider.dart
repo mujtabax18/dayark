@@ -302,7 +302,7 @@ abstract class HttpAiProvider
           'options': {
             if (settings.temperature != null)
               'temperature': settings.temperature,
-            'num_predict': -1,
+            'num_predict': settings.maxOutputTokens ?? defaultMaxOutputTokens,
             if (settings.contextWindowTokens != null)
               'num_ctx': settings.contextWindowTokens,
           },

@@ -12,6 +12,10 @@ class GgufMetadata {
   final int bytes;
   String? get architecture => values['general.architecture'] as String?;
   int? get nativeContext => _positive('$architecture.context_length');
+  bool get supportsThinkingControl =>
+      (values['tokenizer.chat_template'] as String? ?? '').contains(
+        'enable_thinking',
+      );
   int? get fileType => values['general.file_type'] as int?;
   int? get layerCount => _positive('$architecture.block_count');
   int? _positive(String key) {
@@ -39,9 +43,12 @@ class GgufMetadata {
   int chooseContext(int? availableBytes, int? totalBytes) {
     final native = nativeContext;
     if (native == null) {
-      throw const FormatException('GGUF does not declare a native context length.');
+      throw const FormatException(
+        'GGUF does not declare a native context length.',
+      );
     }
-    final available = availableBytes ?? (totalBytes == null ? null : totalBytes ~/ 2);
+    final available =
+        availableBytes ?? (totalBytes == null ? null : totalBytes ~/ 2);
     final kv = kvBytesPerToken;
     final minimum = math.min(native, 256);
     if (available == null) return math.min(native, 1024);
@@ -71,43 +78,83 @@ class _GgufReader {
   _GgufReader(this.file) : length = file.lengthSync();
   final RandomAccessFile file;
   final int length;
-  static const _sizes = <int, int>{0: 1, 1: 1, 2: 2, 3: 2, 4: 4, 5: 4, 6: 4, 7: 1, 10: 8, 11: 8, 12: 8};
+  static const _sizes = <int, int>{
+    0: 1,
+    1: 1,
+    2: 2,
+    3: 2,
+    4: 4,
+    5: 4,
+    6: 4,
+    7: 1,
+    10: 8,
+    11: 8,
+    12: 8,
+  };
   Uint8List _read(int n) {
-    if (n < 0 || n > length - file.positionSync()) throw const FormatException('Truncated GGUF metadata.');
+    if (n < 0 || n > length - file.positionSync()) {
+      throw const FormatException('Truncated GGUF metadata.');
+    }
     final result = file.readSync(n);
-    if (result.length != n) throw const FormatException('Truncated GGUF metadata.');
+    if (result.length != n) {
+      throw const FormatException('Truncated GGUF metadata.');
+    }
     return result;
   }
+
   void _skip(int n) {
     final p = file.positionSync();
-    if (n < 0 || n > length - p) throw const FormatException('Invalid GGUF metadata length.');
+    if (n < 0 || n > length - p) {
+      throw const FormatException('Invalid GGUF metadata length.');
+    }
     file.setPositionSync(p + n);
   }
+
   int _u32() => ByteData.sublistView(_read(4)).getUint32(0, Endian.little);
   int _u64() {
     final n = ByteData.sublistView(_read(8)).getUint64(0, Endian.little);
     if (n < 0) throw const FormatException('GGUF metadata length overflow.');
     return n;
   }
+
   String _string() {
     final n = _u64();
-    if (n > 1024 * 1024) throw const FormatException('GGUF metadata text is too large.');
+    if (n > 1024 * 1024) {
+      throw const FormatException('GGUF metadata text is too large.');
+    }
     return utf8.decode(_read(n));
   }
+
   void _skipValue(int type) {
-    if (_sizes[type] case final size?) { _skip(size); return; }
-    if (type == 8) { _skip(_u64()); return; }
+    if (_sizes[type] case final size?) {
+      _skip(size);
+      return;
+    }
+    if (type == 8) {
+      _skip(_u64());
+      return;
+    }
     if (type == 9) {
       final item = _u32();
       final count = _u64();
-      if (count > length - file.positionSync()) throw const FormatException('Invalid GGUF array.');
-      if (_sizes[item] case final width?) { _skip(count * width); return; }
-      if (item != 8) throw const FormatException('Unsupported GGUF array type.');
-      for (var i = 0; i < count; i++) { _skip(_u64()); }
+      if (count > length - file.positionSync()) {
+        throw const FormatException('Invalid GGUF array.');
+      }
+      if (_sizes[item] case final width?) {
+        _skip(count * width);
+        return;
+      }
+      if (item != 8) {
+        throw const FormatException('Unsupported GGUF array type.');
+      }
+      for (var i = 0; i < count; i++) {
+        _skip(_u64());
+      }
       return;
     }
     throw const FormatException('Unknown GGUF metadata type.');
   }
+
   Object? _value(int type) {
     if (type == 8) return _string();
     if (type == 4) return _u32();
@@ -119,18 +166,36 @@ class _GgufReader {
     _skipValue(type);
     return null;
   }
+
   GgufMetadata parse() {
-    if (ascii.decode(_read(4)) != 'GGUF') throw const FormatException('Not a GGUF file.');
+    if (ascii.decode(_read(4)) != 'GGUF') {
+      throw const FormatException('Not a GGUF file.');
+    }
     final version = _u32();
-    if (version != 2 && version != 3) throw const FormatException('Unsupported GGUF metadata version.');
+    if (version != 2 && version != 3) {
+      throw const FormatException('Unsupported GGUF metadata version.');
+    }
     _u64(); // tensor count
     final count = _u64();
-    if (count > length ~/ 12) throw const FormatException('Invalid GGUF metadata count.');
+    if (count > length ~/ 12) {
+      throw const FormatException('Invalid GGUF metadata count.');
+    }
     final values = <String, Object>{};
     for (var i = 0; i < count; i++) {
       final key = _string();
       final type = _u32();
-      final wanted = key == 'general.architecture' || key == 'general.name' || key == 'general.file_type' || key.endsWith('.context_length') || key.endsWith('.block_count') || key.endsWith('.embedding_length') || key.endsWith('.attention.head_count') || key.endsWith('.attention.head_count_kv') || key.endsWith('.attention.key_length') || key.endsWith('.attention.value_length');
+      final wanted =
+          key == 'tokenizer.chat_template' ||
+          key == 'general.architecture' ||
+          key == 'general.name' ||
+          key == 'general.file_type' ||
+          key.endsWith('.context_length') ||
+          key.endsWith('.block_count') ||
+          key.endsWith('.embedding_length') ||
+          key.endsWith('.attention.head_count') ||
+          key.endsWith('.attention.head_count_kv') ||
+          key.endsWith('.attention.key_length') ||
+          key.endsWith('.attention.value_length');
       if (wanted) {
         final value = _value(type);
         if (value != null) values[key] = value;

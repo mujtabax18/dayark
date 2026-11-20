@@ -9,6 +9,9 @@ class AiSettings {
     this.responseLanguage,
     this.inputLanguage,
     this.thinking,
+    this.performanceProfile = 'custom',
+    this.useMemory = true,
+    this.idleTimeoutMinutes = 5,
   }) {
     if (temperature != null && (!temperature!.isFinite || temperature! < 0)) {
       throw ArgumentError.value(temperature, 'temperature');
@@ -33,6 +36,9 @@ class AiSettings {
   final String? responseLanguage;
   final String? inputLanguage;
   final bool? thinking;
+  final String performanceProfile;
+  final bool useMemory;
+  final int idleTimeoutMinutes;
   Map<String, dynamic> toJson() => {
     'temperature': temperature,
     'maxOutputTokens': maxOutputTokens,
@@ -42,6 +48,9 @@ class AiSettings {
     'responseLanguage': responseLanguage,
     'inputLanguage': inputLanguage,
     'thinking': thinking,
+    'performanceProfile': performanceProfile,
+    'useMemory': useMemory,
+    'idleTimeoutMinutes': idleTimeoutMinutes,
   };
   factory AiSettings.fromJson(Map<String, dynamic> json) => AiSettings(
     temperature: (json['temperature'] as num?)?.toDouble(),
@@ -52,5 +61,8 @@ class AiSettings {
     responseLanguage: json['responseLanguage'] as String?,
     inputLanguage: json['inputLanguage'] as String?,
     thinking: json['thinking'] as bool?,
+    performanceProfile: json['performanceProfile'] as String? ?? 'custom',
+    useMemory: json['useMemory'] as bool? ?? true,
+    idleTimeoutMinutes: (json['idleTimeoutMinutes'] as int? ?? 5).clamp(0, 120),
   );
 }

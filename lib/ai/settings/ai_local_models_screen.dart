@@ -1,11 +1,17 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:file_picker/file_picker.dart';
 
 import '../hardware/ai_hardware.dart';
 import '../model_manager/model_catalogue.dart';
 import 'ai_defaults.dart';
 import 'ai_local_models.dart';
+
+part 'ai_local_models_cards.dart';
+part 'ai_local_models_details.dart';
+part 'ai_local_models_library.dart';
 
 class AiLocalModelsScreen extends StatefulWidget {
   const AiLocalModelsScreen({
@@ -22,8 +28,20 @@ class AiLocalModelsScreen extends StatefulWidget {
 }
 
 class _AiLocalModelsScreenState extends State<AiLocalModelsScreen> {
-  final Map<String, String> _selectedVariants = {};
+  void _update(VoidCallback change) => setState(change);
   final _scrollController = ScrollController();
+  final Map<String, String> _selectedVariants = {};
+  final Set<String> _favourites = {};
+  final Set<String> _comparison = {};
+  List<String> _recent = [];
+  String _section = 'All models', _query = '', _sort = 'Name';
+  String? _quantization;
+  bool _compatibleOnly = false;
+  @override
+  void initState() {
+    super.initState();
+    _loadLibrary();
+  }
 
   @override
   void dispose() {
@@ -51,15 +69,22 @@ class _AiLocalModelsScreenState extends State<AiLocalModelsScreen> {
         runtimeSupported: widget.models.supported ? null : false,
       );
 
-  AiModelRecommendation _fit(AiCatalogueModel model) => const AiModelRecommender().classify(
-    _hardware, model, installed: widget.models.installed.where((m) => m.id == model.id).firstOrNull?.detectedModel,
-  );
+  AiModelRecommendation _fit(AiCatalogueModel model) =>
+      const AiModelRecommender().classify(
+        _hardware,
+        model,
+        installed: widget.models.installed
+            .where((m) => m.id == model.id)
+            .firstOrNull
+            ?.detectedModel,
+      );
 
   IconData _fitIcon(AiModelFit fit) => switch (fit) {
     AiModelFit.lightweight => Icons.bolt,
     AiModelFit.smooth => Icons.check_circle_outline,
     AiModelFit.balanced => Icons.speed,
-    AiModelFit.heavy || AiModelFit.veryHeavy => Icons.local_fire_department_outlined,
+    AiModelFit.heavy ||
+    AiModelFit.veryHeavy => Icons.local_fire_department_outlined,
     AiModelFit.unsupported => Icons.block,
     AiModelFit.unknown => Icons.memory,
   };
@@ -131,348 +156,6 @@ class _AiLocalModelsScreenState extends State<AiLocalModelsScreen> {
     }
   }
 
-  void _details(AiCatalogueModel? model, {AiLocalInstallation? installed}) {
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      builder: (context) => ListenableBuilder(
-        listenable: widget.models,
-        builder: (context, _) => SafeArea(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  model?.name ?? installed!.name,
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                if (model != null) ...[
-                  Text(
-                    '${model.quantization}${installed == null ? ' · Context detected after download' : ''}',
-                  ),
-                  if (model.metadata['familyReleaseDate'] case final date?)
-                    Text('Family released: $date'),
-                  Text(_fit(model).label),
-                  ..._fit(model).reasons.map((reason) => Text(reason)),
-                  Text('License: ${model.license}'),
-                  Text('Languages: ${model.languages.join(', ')}'),
-                  Text(
-                    'Estimated model memory: ${_size(_fit(model).memoryBytes)}',
-                  ),
-                  if (model.metadata['evidence'] case final evidence?)
-                    Text(
-                      'Publisher information: ${evidence.replaceAll('_', ' ')}',
-                    ),
-                  if (model.metadata['notes'] case final notes?) Text(notes),
-                  TextButton.icon(
-                    onPressed: () => _openUrl(model.source),
-                    icon: const Icon(Icons.open_in_new),
-                    label: const Text('Publisher / license'),
-                  ),
-                  if (model.downloadUrl case final url?)
-                    TextButton.icon(
-                      onPressed: () => _openUrl(url),
-                      icon: const Icon(Icons.download_outlined),
-                      label: const Text('Open download link'),
-                    ),
-                ],
-                if (installed != null) ...[
-                  if (installed.detectedModel case final detected?) ...[
-                    Text('Architecture: ${detected.architecture ?? 'Unknown'}'),
-                    Text('Native context: ${detected.nativeContextSize ?? 'Unknown'} tokens'),
-                    Text('Automatic context: ${detected.contextSize} tokens'),
-                    if (detected.activeContextSize != null) Text('Active context: ${detected.activeContextSize} tokens'),
-                    if (detected.fileType != null) Text('GGUF file type: ${detected.fileType}'),
-                    if (detected.performance case final performance?) ...[
-                      if (performance.tokensPerSecond != null) Text('Last run: ${performance.tokensPerSecond!.toStringAsFixed(1)} tokens/s'),
-                      if (performance.peakProcessRssBytes != null) Text('Sampled process RAM: ${_size(performance.peakProcessRssBytes)}'),
-                      if (performance.loadMilliseconds != null) Text('Last load: ${performance.loadMilliseconds} ms'),
-                    ],
-                  ],
-                  Text('Revision: ${installed.revision}'),
-                  SelectableText('SHA-256: ${installed.sha256}'),
-                  Wrap(
-                    spacing: 8,
-                    children: [
-                      if (widget.models.loadedId == installed.id)
-                        TextButton.icon(
-                          onPressed: widget.models.busy
-                              ? null
-                              : widget.models.unload,
-                          icon: const Icon(Icons.stop_circle_outlined),
-                          label: const Text('Unload'),
-                        ),
-                      TextButton.icon(
-                        onPressed: widget.models.busy
-                            ? null
-                            : () => widget.models.measure(installed.id),
-                        icon: const Icon(Icons.speed),
-                        label: const Text('Benchmark'),
-                      ),
-                    ],
-                  ),
-                  if (widget.models.benchmark != null)
-                    Text(widget.models.benchmark!),
-                ],
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _row(
-    AiCatalogueModel? model, {
-    AiLocalInstallation? installed,
-    bool recommended = false,
-  }) {
-    final session = widget.models;
-    final fit = model == null ? null : _fit(model);
-    final id = model?.id ?? installed!.id;
-    recommended = fit?.fit.recommended ?? false;
-    final active = session.loadedId == id;
-    final selected = widget.selectedId == id;
-    final theme = Theme.of(context);
-    return Card(
-      color: active ? theme.colorScheme.primaryContainer : null,
-      shape: active || recommended
-          ? RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-              side: BorderSide(
-                color: theme.colorScheme.primary,
-                width: active ? 2 : 1,
-              ),
-            )
-          : null,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 10, 4, 4),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                if (active)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 6),
-                    child: Icon(
-                      Icons.check_circle,
-                      size: 18,
-                      color: theme.colorScheme.primary,
-                    ),
-                  ),
-                Expanded(
-                  child: Text(
-                    model?.name ?? installed!.name,
-                    style: theme.textTheme.titleSmall,
-                  ),
-                ),
-                if (recommended)
-                  Tooltip(
-                    message: 'Best model and quantization for this family on your device',
-                    child: Icon(
-                      Icons.auto_awesome,
-                      size: 18,
-                      color: theme.colorScheme.primary,
-                    ),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Text(
-              [
-                if (model?.parameters case final count?)
-                  '${count < 1 ? '${(count * 1000).round()}M' : '${count}B'} params',
-                if (model != null) model.quantization,
-                '${model?.artifact == null && installed == null ? '≈' : ''}${_size(installed?.bytes ?? model?.artifact?.bytes ?? model?.estimatedDiskBytes)}',
-                if (fit != null) '≈${_size(fit.memoryBytes)} RAM',
-              ].join(' · '),
-              style: theme.textTheme.bodySmall,
-            ),
-            if (fit != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 6),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(
-                      _fitIcon(fit.fit),
-                      size: 16,
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: Text(
-                        fit.label,
-                        style: theme.textTheme.bodySmall,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            Row(
-              children: [
-                if (active || selected || recommended)
-                  Text(
-                    active
-                        ? 'Active'
-                        : selected
-                        ? 'Selected'
-                        : 'Recommended',
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: theme.colorScheme.primary,
-                    ),
-                  ),
-                const Spacer(),
-                TextButton(
-                  onPressed: () => _details(model, installed: installed),
-                  child: const Text('View More'),
-                ),
-                if (installed != null) ...[
-                  IconButton(
-                    tooltip: 'Use model',
-                    onPressed: session.busy
-                        ? null
-                        : () => Navigator.pop(context, id),
-                    icon: Icon(
-                      selected
-                          ? Icons.radio_button_checked
-                          : Icons.radio_button_unchecked,
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: active ? 'Model active' : 'Load model',
-                    onPressed: session.busy || active
-                        ? null
-                        : () => session.load(id),
-                    icon: const Icon(Icons.play_arrow_rounded),
-                  ),
-                  IconButton(
-                    tooltip: 'Delete model',
-                    onPressed: session.busy ? null : () => _delete(installed),
-                    icon: const Icon(Icons.delete_outline),
-                  ),
-                ] else
-                  IconButton(
-                    tooltip: 'Download ${model!.quantization}',
-                    onPressed: session.busy || !model.downloadable
-                        ? null
-                        : () => _install(model),
-                    icon: const Icon(Icons.download_outlined),
-                  ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Iterable<Widget> _downloadRows(AiModelFamily family) sync* {
-    final groups = <String, List<AiCatalogueModel>>{};
-    for (final model in family.models) {
-      groups.putIfAbsent(model.name, () => []).add(model);
-    }
-    for (final group in groups.entries) {
-      final variants = group.value;
-      final recommended = variants
-          .where((m) => m.id == family.recommendedId)
-          .firstOrNull;
-      final selected =
-          variants
-              .where((m) => m.id == _selectedVariants[group.key])
-              .firstOrNull ??
-          recommended ??
-          variants.first;
-      Widget recommendation(AiCatalogueModel model) =>
-          model.id == family.recommendedId
-          ? Padding(
-              padding: const EdgeInsets.only(left: 8),
-              child: Icon(
-                Icons.auto_awesome,
-                size: 18,
-                color: Theme.of(context).colorScheme.primary,
-              ),
-            )
-          : const SizedBox.shrink();
-      yield Column(
-        key: ValueKey('download-model-${group.key}'),
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 14),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        group.key,
-                        style: Theme.of(context).textTheme.titleSmall,
-                      ),
-                      DropdownButton<String>(
-                        key: ValueKey('model-version-${group.key}'),
-                        value: selected.id,
-                        isExpanded: true,
-                        underline: const SizedBox.shrink(),
-                        menuMaxHeight: 420,
-                        borderRadius: BorderRadius.circular(16),
-                        items: variants
-                            .map(
-                              (model) => DropdownMenuItem(
-                                value: model.id,
-                                child: Row(
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        '${model.quantization} · ${model.artifact == null ? '≈' : ''}${_size(model.artifact?.bytes ?? model.estimatedDiskBytes)}',
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                    recommendation(model),
-                                  ],
-                                ),
-                              ),
-                            )
-                            .toList(),
-                        onChanged: widget.models.busy
-                            ? null
-                            : (id) {
-                                if (id != null) {
-                                  setState(
-                                    () => _selectedVariants[group.key] = id,
-                                  );
-                                }
-                              },
-                      ),
-                      Row(children: [Icon(_fitIcon(_fit(selected).fit), size: 16), const SizedBox(width: 4), Expanded(child: Text(_fit(selected).label, style: Theme.of(context).textTheme.bodySmall))]),
-                    ],
-                  ),
-                ),
-                IconButton(
-                  tooltip: 'Model details',
-                  onPressed: () => _details(selected),
-                  icon: const Icon(Icons.info_outline, size: 20),
-                ),
-                IconButton.filled(
-                  tooltip: 'Download ${selected.quantization}',
-                  onPressed: widget.models.busy || !selected.downloadable
-                      ? null
-                      : () => _install(selected),
-                  icon: const Icon(Icons.download_rounded),
-                ),
-              ],
-            ),
-          ),
-          const Divider(height: 1),
-        ],
-      );
-    }
-  }
-
   Widget _progress() {
     final session = widget.models;
     final entry = session.downloadingId == null
@@ -536,17 +219,47 @@ class _AiLocalModelsScreenState extends State<AiLocalModelsScreen> {
           .map(
             (f) => AiModelFamily(
               f.name,
-              f.models.where((m) => !excluded.contains(m.id)).toList(),
+              f.models
+                  .where(
+                    (m) =>
+                        !excluded.contains(m.id) &&
+                        _matches(m.id, m.name, recommendedIds),
+                  )
+                  .toList()
+                ..sort(_compare),
               f.recommendedId,
             ),
           )
           .where((f) => f.models.isNotEmpty)
           .toList();
+      families.sort((a, b) => _compare(a.models.first, b.models.first));
       final visibleCount = families.fold<int>(0, (n, f) => n + f.models.length);
       return Scaffold(
         appBar: AppBar(
           title: const Text('Local model manager'),
           actions: [
+            if (_comparison.isNotEmpty)
+              TextButton(
+                onPressed: _compareModels,
+                child: Text('Compare (${_comparison.length})'),
+              ),
+            if (models.supportsImport)
+              IconButton(
+                tooltip: 'Import local GGUF',
+                icon: const Icon(Icons.file_open_outlined),
+                onPressed: models.busy
+                    ? null
+                    : () async {
+                        final files = await FilePicker.pickFiles(
+                          type: FileType.custom,
+                          allowedExtensions: ['gguf'],
+                        );
+                        final file = files.firstOrNull;
+                        if (file?.path != null) {
+                          await models.importFile(file!.path!, name: file.name);
+                        }
+                      },
+              ),
             IconButton(
               tooltip: 'Refresh hardware and installations',
               onPressed: models.busy ? null : models.refresh,
@@ -559,6 +272,93 @@ class _AiLocalModelsScreenState extends State<AiLocalModelsScreen> {
             constraints: const BoxConstraints(maxWidth: 900),
             child: Column(
               children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                  child: TextField(
+                    decoration: const InputDecoration(
+                      prefixIcon: Icon(Icons.search),
+                      hintText: 'Search models, families and quantizations',
+                    ),
+                    onChanged: (value) => setState(() => _query = value),
+                  ),
+                ),
+                SizedBox(
+                  height: 48,
+                  child: ListView(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    children: [
+                      for (final section in [
+                        'Recommended',
+                        'Installed',
+                        'Favourites',
+                        'Recently used',
+                        'All models',
+                        'Downloads',
+                      ])
+                        Padding(
+                          padding: const EdgeInsets.only(right: 6),
+                          child: ChoiceChip(
+                            label: Text(section),
+                            selected: _section == section,
+                            onSelected: (_) =>
+                                setState(() => _section = section),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Wrap(
+                    spacing: 12,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      DropdownButton<String>(
+                        value: _sort,
+                        items: [
+                          for (final sort in [
+                            'Name',
+                            'Download size',
+                            'Memory estimate',
+                            'Favourites',
+                            'Recently used',
+                          ])
+                            DropdownMenuItem(value: sort, child: Text(sort)),
+                        ],
+                        onChanged: (value) => setState(() => _sort = value!),
+                      ),
+                      DropdownButton<String>(
+                        hint: const Text('All quantizations'),
+                        value: _quantization,
+                        items: [
+                          const DropdownMenuItem<String>(
+                            value: null,
+                            child: Text('All quantizations'),
+                          ),
+                          for (final q
+                              in widget.defaults.catalogue.models
+                                  .map((m) => m.quantization)
+                                  .toSet()
+                                  .toList()
+                                ..sort())
+                            DropdownMenuItem(value: q, child: Text(q)),
+                        ],
+                        onChanged: (value) =>
+                            setState(() => _quantization = value),
+                      ),
+                      FilterChip(
+                        label: const Text('Recommended memory fit'),
+                        selected: _compatibleOnly,
+                        onSelected: (value) =>
+                            setState(() => _compatibleOnly = value),
+                      ),
+                      Text(
+                        'Storage: ${_size(models.installed.fold<int>(0, (total, m) => total + m.bytes))}',
+                      ),
+                    ],
+                  ),
+                ),
                 if (models.busy)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
@@ -578,13 +378,15 @@ class _AiLocalModelsScreenState extends State<AiLocalModelsScreen> {
                           padding: EdgeInsets.symmetric(vertical: 12),
                           child: Text('No models downloaded yet.'),
                         ),
-                      ...models.installed.map(
-                        (m) => _row(
-                          _entry(m.id),
-                          installed: m,
-                          recommended: recommendedIds.contains(m.id),
-                        ),
-                      ),
+                      ...models.installed
+                          .where((m) => _matches(m.id, m.name, recommendedIds))
+                          .map(
+                            (m) => _row(
+                              _entry(m.id),
+                              installed: m,
+                              recommended: recommendedIds.contains(m.id),
+                            ),
+                          ),
                       if (models.status != null)
                         Padding(
                           padding: const EdgeInsets.symmetric(vertical: 8),

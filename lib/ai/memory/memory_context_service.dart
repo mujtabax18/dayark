@@ -56,7 +56,15 @@ class MemoryContextService {
     return const ContextBuilder().build(
       history: history,
       message: message,
-      hits: hits,
+      hits: hits
+          .take(
+            settings.performanceProfile == 'fast'
+                ? 2
+                : settings.performanceProfile == 'quality'
+                ? 8
+                : 4,
+          )
+          .toList(),
       contextTokens: settings.contextWindowTokens ?? 4096,
       outputTokens: deferToRuntime ? 0 : settings.maxOutputTokens ?? 1024,
       enforceInputLimit: !deferToRuntime,

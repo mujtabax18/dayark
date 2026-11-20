@@ -1,4 +1,7 @@
 import 'dart:async';
+
+import 'fixtures/gguf_fixture.dart';
+
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -36,7 +39,7 @@ class FakeRuntime implements AiOfflineRuntime {
 }
 
 class DownloadAdapter implements HttpClientAdapter {
-  List<int> body = utf8.encode('GGUFsynthetic-model');
+  List<int> body = ggufFixture();
   int status = 200, calls = 0;
   RequestOptions? lastRequest;
   String? redirectTo;
@@ -87,7 +90,7 @@ void main() {
     cpu: 'test',
     logicalCores: 8,
     availableMemoryBytes: ram,
-    totalMemoryBytes: 64 * aiGiB,
+    totalMemoryBytes: ram,
     freeStorageBytes: disk,
     runtimeSupported: supported,
   );
@@ -96,29 +99,29 @@ void main() {
     final catalogue = AiModelCatalogue.candidates();
     const engine = AiModelRecommender();
     final fits = engine.recommend(hardware(), catalogue);
-    expect(fits.any((r) => r.fit == AiModelFit.candidate), isTrue);
-    expect(fits.any((r) => r.fit == AiModelFit.insufficient), isTrue);
+    expect(fits.any((r) => r.fit.recommended), isTrue);
+    expect(fits.any((r) => r.fit == AiModelFit.veryHeavy), isTrue);
     expect(
-      engine.recommend(hardware(ram: null), catalogue).first.fit,
-      AiModelFit.unknown,
+      engine.recommend(hardware(ram: null), catalogue).first.memoryBytes,
+      greaterThan(0),
     );
     expect(
-      engine.recommend(hardware(supported: null), catalogue).first.fit,
-      AiModelFit.unknown,
+      engine.recommend(hardware(supported: null), catalogue).first.verified,
+      false,
     );
     expect(
       engine
           .recommend(hardware(supported: false), catalogue)
-          .every((r) => r.fit == AiModelFit.insufficient),
+          .every((r) => r.fit == AiModelFit.unsupported),
       true,
     );
     expect(
-      engine.recommend(hardware(disk: 0), catalogue).first.fit,
-      AiModelFit.insufficient,
+      engine.recommend(hardware(disk: 0), catalogue).first.reasons.join(),
+      contains('free storage'),
     );
     expect(
-      engine.recommend(hardware(), catalogue, contextSize: 8192).first.fit,
-      AiModelFit.unknown,
+      engine.recommend(hardware(), catalogue, contextSize: 8192).first.verified,
+      false,
     );
     expect(catalogue.models.length, 337);
     expect(catalogue.models.every((m) => m.downloadable), isTrue);
@@ -149,7 +152,7 @@ void main() {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     var status = 200;
     var requests = 0;
-    final body = utf8.encode('GGUFstreamed-model-fixture');
+    final body = ggufFixture(name: 'Streamed');
     final serving = server.listen((request) async {
       requests++;
       request.response.statusCode = status;
@@ -334,7 +337,7 @@ void main() {
         expect(runtime.loads, 1);
         await store.unload();
         expect(runtime.disposals, greaterThan(0));
-        adapter.body = utf8.encode('GGUFupdated-model');
+        adapter.body = ggufFixture(name: 'Updated');
         final second = await store.install(
           entry(revision: 'v2'),
           allowDownload: true,
@@ -410,6 +413,25 @@ void main() {
       );
       expect(adapter.calls, 0);
     });
+
+    test(
+      'local GGUF import preserves source and restores hashed manifest',
+      () async {
+        final source = await File('${directory.path}/source.gguf')
+            .writeAsBytes(ggufFixture());
+        final imported = await store.importFile(
+          source.path,
+          id: 'imported',
+          name: 'Imported fixture',
+        );
+        expect(imported.revision, 'local-import');
+        expect(await source.exists(), true);
+        expect(imported.model.nativeContextSize, 4096);
+        final restored = await store.restore();
+        expect(restored.single.model.id, 'imported');
+        expect(restored.single.sha256, imported.sha256);
+      },
+    );
 
     test(
       'bad hash, size, GGUF header and HTTP error never register files',

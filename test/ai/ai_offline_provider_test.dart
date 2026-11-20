@@ -87,19 +87,17 @@ void main() {
     },
   );
   test(
-    'unknown models and invalid local context fail before engine loading',
+    'unknown models fail before loading and context ceilings reach the runtime',
     () async {
       await expectLater(
         gateway.generate(request(model: 'missing')),
         fails(AiErrorCode.providerUnavailable),
       );
-      await expectLater(
-        gateway.generate(
-          request(settings: AiSettings(contextWindowTokens: 2048)),
-        ),
-        fails(AiErrorCode.invalidRequest),
-      );
       expect(runtime.loaded, isEmpty);
+      await gateway.generate(
+        request(settings: AiSettings(contextWindowTokens: 2048)),
+      );
+      expect(runtime.requests.single.settings.contextWindowTokens, 2048);
     },
   );
   test('concurrent native work is rejected and cancellation prevents inference after load', () async {
@@ -136,6 +134,17 @@ void main() {
         gateway.generate(request()),
         fails(AiErrorCode.providerUnavailable),
       );
+    },
+  );
+  test(
+    'idle timeout releases native runtime and clears loaded state',
+    () async {
+      provider.idleTimeout = const Duration(milliseconds: 10);
+      await gateway.generate(request());
+      expect(provider.loadedModelId, 'small');
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(runtime.disposed, true);
+      expect(provider.loadedModelId, isNull);
     },
   );
   test('remote paths and duplicate models are rejected', () {

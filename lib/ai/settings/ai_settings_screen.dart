@@ -18,12 +18,18 @@ import 'ai_defaults.dart';
 import 'ai_defaults_screen.dart';
 import 'ai_local_models.dart';
 import 'ai_local_models_factory.dart';
-import 'ai_local_models_screen.dart';
+import 'ai_local_models_page.dart';
 import 'ai_settings.dart';
 import 'ai_settings_store.dart';
+import '../chat/ai_workspace_store.dart';
 
 class AiSettingsScreen extends StatefulWidget {
-  const AiSettingsScreen({super.key, this.store, this.localModels, this.promptPreview});
+  const AiSettingsScreen({
+    super.key,
+    this.store,
+    this.localModels,
+    this.promptPreview,
+  });
   final VoidCallback? promptPreview;
   final AiSettingsStore? store;
   final Future<AiLocalModels> Function()? localModels;
@@ -51,6 +57,7 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
       _customLanguage = TextEditingController();
   String? _id;
   bool _thinking = false;
+  bool _enterToSend = false;
   bool _sendAdditionalPrompt = true;
   String _language = 'Automatic';
   AiProviderKind _kind = AiProviderKind.offline;
@@ -83,19 +90,10 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
         defaults = AiDefaults.builtIn();
         defaultsNotice = 'Saved model defaults could not be read. Built-in choices are shown; save new defaults in Provider and model defaults.';
       }
-      AiLocalModels? local;
-      if ((value.selectedProfile?.kind ?? AiProviderKind.offline) ==
-          AiProviderKind.offline) {
-        try {
-          local = await (widget.localModels ?? sharedAiLocalModels)();
-        } catch (_) {
-          defaultsNotice = 'Local model storage is unavailable. Retry Local model manager or choose an online provider.';
-        }
-      }
       if (!mounted) return;
       setState(() {
-        _local = local;
         _store = store;
+        _enterToSend = AiWorkspaceStore(store.preferences).enterToSend;
         _defaults = defaults;
         _status = defaultsNotice;
         _preferences = value;
@@ -168,13 +166,11 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
   Future<AiLocalModels> _ensureLocal() async =>
       _local ??= await (widget.localModels ?? sharedAiLocalModels)();
   Future<void> _openManager() => _run(() async {
-    final models = await _ensureLocal();
-    if (!mounted) return;
     final id = await Navigator.push<String>(
       context,
       MaterialPageRoute(
-        builder: (_) => AiLocalModelsScreen(
-          models: models,
+        builder: (_) => AiLocalModelsPage(
+          load: _ensureLocal,
           defaults: _defaults,
           selectedId: _kind == AiProviderKind.offline ? _model.text : null,
         ),
@@ -228,8 +224,16 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
         .firstOrNull;
     final installed = _local?.installed.any((m) => m.id == id) ?? false;
     final hardware = _local?.hardware;
-    final fit = hardware == null || model == null ? null : const AiModelRecommender().classify(hardware, model,
-        installed: _local?.installed.where((m) => m.id == id).firstOrNull?.detectedModel);
+    final fit = hardware == null || model == null
+        ? null
+        : const AiModelRecommender().classify(
+            hardware,
+            model,
+            installed: _local?.installed
+                .where((m) => m.id == id)
+                .firstOrNull
+                ?.detectedModel,
+          );
     final warning = fit == null ? '' : ' · ${fit.label}';
 
     return '${model?.name ?? id}${model == null ? '' : ' · ${model.quantization}'} · ${installed
@@ -250,7 +254,8 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
   );
   AiCapabilities get _capabilities {
     if (_kind == AiProviderKind.offline) {
-      return AiCapabilities(contextWindow: true);
+      return _local?.provider?.capabilitiesFor(_model.text.trim()) ??
+          AiCapabilities(contextWindow: true);
     }
     try {
       final p = _profile().createProvider(credentials: () async => null);
@@ -308,8 +313,9 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
       }
       final settings = AiSettings(
         temperature: double.tryParse(_temperature.text),
-        maxOutputTokens: _kind == AiProviderKind.offline ? null : int.tryParse(_output.text),
-        contextWindowTokens: _kind != AiProviderKind.offline && _capabilities.contextWindow
+        maxOutputTokens: int.tryParse(_output.text),
+        contextWindowTokens:
+            _kind != AiProviderKind.offline && _capabilities.contextWindow
             ? int.tryParse(_context.text)
             : null,
         customInstructions: _instructions.text,
@@ -660,6 +666,27 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
                       'Manage models, memory and your assistant preferences.',
                       Icons.settings_outlined,
                       [
+                        SwitchListTile.adaptive(
+                          title: const Text('Enter to send'),
+                          subtitle: const Text(
+                            'Send with Enter. Shift+Enter adds a new line. Ctrl/Cmd+Enter always sends.',
+                          ),
+                          value: _enterToSend,
+                          onChanged: (value) async {
+                            try {
+                              await AiWorkspaceStore(_store!.preferences)
+                                  .setEnterToSend(value);
+                              if (mounted) setState(() => _enterToSend = value);
+                            } catch (_) {
+                              if (mounted) {
+                                setState(
+                                  () => _status =
+                                      'Unable to save keyboard preferences.',
+                                );
+                              }
+                            }
+                          },
+                        ),
                         ListTile(
                           leading: const Icon(
                             Icons.download_for_offline_outlined,
@@ -871,7 +898,7 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
                             value: _thinking,
                             title: const Text('Enable model thinking'),
                             subtitle: const Text(
-                              'Ollama reasoning can delay the answer. Chat waits for completion without the shared output token cap. Off for faster everyday chat.',
+                              'Reasoning shares the output budget with the answer. Off for faster everyday chat.',
                             ),
                             onChanged: (v) => setState(() => _thinking = v),
                           ),
@@ -897,12 +924,10 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
                           const Padding(
                             padding: EdgeInsets.symmetric(vertical: 8),
                             child: Text(
-                              'Local output follows the model until it finishes or you press Stop. The shared output cap applies to online providers.',
+                              'Output limits include reasoning tokens. Continue a limited answer from its response toolbar.',
                             ),
                           ),
-                        if (caps.outputTokenLimit &&
-                            _kind != AiProviderKind.ollama &&
-                            _kind != AiProviderKind.offline)
+                        if (caps.outputTokenLimit)
                           _tokenPicker(_output, 'Maximum output tokens', [
                             512,
                             1024,
@@ -912,8 +937,22 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
                             16384,
                           ]),
                         if (_kind == AiProviderKind.offline)
-                          ListTile(contentPadding: EdgeInsets.zero, leading: const Icon(Icons.auto_awesome), title: const Text('Automatic context window'), subtitle: Text(_local?.installed.where((m) => m.id == _model.text).firstOrNull?.detectedModel == null ? 'Detected from the GGUF file after installation.' : '${_local!.installed.firstWhere((m) => m.id == _model.text).detectedModel!.contextSize} tokens · model and device detected')),
-                        if (caps.contextWindow && _kind != AiProviderKind.offline)
+                          ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            leading: const Icon(Icons.auto_awesome),
+                            title: const Text('Automatic context window'),
+                            subtitle: Text(
+                              _local?.installed
+                                          .where((m) => m.id == _model.text)
+                                          .firstOrNull
+                                          ?.detectedModel ==
+                                      null
+                                  ? 'Detected from the GGUF file after installation.'
+                                  : '${_local!.installed.firstWhere((m) => m.id == _model.text).detectedModel!.contextSize} tokens · model and device detected',
+                            ),
+                          ),
+                        if (caps.contextWindow &&
+                            _kind != AiProviderKind.offline)
                           _tokenPicker(_context, 'Context window tokens', [
                             2048,
                             4096,
@@ -936,7 +975,15 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
                               setState(() => _sendAdditionalPrompt = value),
                         ),
                         if (widget.promptPreview != null)
-                          ListTile(contentPadding: EdgeInsets.zero, leading: const Icon(Icons.code_rounded), title: const Text('View prompts'), subtitle: const Text('Inspect draft and latest prepared request'), onTap: widget.promptPreview),
+                          ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            leading: const Icon(Icons.code_rounded),
+                            title: const Text('View prompts'),
+                            subtitle: const Text(
+                              'Inspect draft and latest prepared request',
+                            ),
+                            onTap: widget.promptPreview,
+                          ),
                         if (_sendAdditionalPrompt) ...[
                           _field(
                             _instructions,

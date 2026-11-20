@@ -23,6 +23,9 @@ class RecordingEngine extends Fake implements LlamaEngine {
   }
 
   @override
+  Future<int> getContextSize() async => attempts.last.contextSize;
+
+  @override
   Future<void> dispose() async {}
 }
 
@@ -33,7 +36,12 @@ void main() {
     directory = await Directory.systemTemp.createTemp('dayark-gpu-test');
     final file = await File('${directory.path}/model.gguf')
         .writeAsString('GGUF');
-    model = AiLocalModel(id: 'test', path: file.path, contextSize: 2048);
+    model = AiLocalModel(
+      id: 'test',
+      path: file.path,
+      contextSize: 2048,
+      gpuLayers: 4,
+    );
   });
   tearDown(() => directory.delete(recursive: true));
 
@@ -80,7 +88,7 @@ void main() {
   });
 
   test('GPU and CPU failure returns a model load error', () async {
-    final engine = RecordingEngine()..failures = 2;
+    final engine = RecordingEngine()..failures = 100;
     final runtime = LlamadartRuntime(engine: engine);
     await expectLater(
       runtime.load(model, AiCancellationToken()),
@@ -92,7 +100,7 @@ void main() {
         ),
       ),
     );
-    expect(engine.attempts, hasLength(2));
+    expect(engine.attempts, hasLength(5));
     await runtime.dispose();
   });
 }

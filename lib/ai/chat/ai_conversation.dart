@@ -19,7 +19,22 @@ class AiChatMessage {
     this.elapsedMilliseconds,
     this.thinking,
     this.thinkingOnly = false,
+    this.bookmarked = false,
+    this.note = '',
+    this.tags = const [],
+    this.versions = const [],
+    this.outputTokens,
+    this.inputTokens,
+    this.finishReason,
+    this.firstTokenMilliseconds,
+    this.firstVisibleTokenMilliseconds,
   });
+  final bool bookmarked;
+  final String note;
+  final List<String> tags, versions;
+  final int? outputTokens, inputTokens;
+  final int? firstTokenMilliseconds, firstVisibleTokenMilliseconds;
+  final String? finishReason;
   final String? thinking;
   final bool thinkingOnly;
   final int? elapsedMilliseconds;
@@ -36,6 +51,10 @@ class AiChatMessage {
     int? elapsedMilliseconds,
     String? thinking,
     bool? thinkingOnly,
+    bool? bookmarked,
+    String? note,
+    List<String>? tags,
+    List<String>? versions,
   }) => AiChatMessage(
     id: id,
     message: message ?? this.message,
@@ -48,10 +67,30 @@ class AiChatMessage {
     elapsedMilliseconds: elapsedMilliseconds ?? this.elapsedMilliseconds,
     thinking: thinking ?? this.thinking,
     thinkingOnly: thinkingOnly ?? this.thinkingOnly,
+    bookmarked: bookmarked ?? this.bookmarked,
+    note: note ?? this.note,
+    tags: tags ?? this.tags,
+    versions: versions ?? this.versions,
+    outputTokens: outputTokens,
+    inputTokens: inputTokens,
+    finishReason: finishReason,
+    firstTokenMilliseconds: firstTokenMilliseconds,
+    firstVisibleTokenMilliseconds: firstVisibleTokenMilliseconds,
   );
   Map<String, dynamic> toJson({bool includeDiagnostics = true}) => {
     'id': id,
     'role': message.role.name,
+    if (bookmarked) 'bookmarked': true,
+    if (note.isNotEmpty) 'note': note,
+    if (tags.isNotEmpty) 'tags': tags,
+    if (versions.isNotEmpty) 'versions': versions,
+    if (outputTokens != null) 'outputTokens': outputTokens,
+    if (inputTokens != null) 'inputTokens': inputTokens,
+    if (finishReason != null) 'finishReason': finishReason,
+    if (firstTokenMilliseconds != null)
+      'firstTokenMilliseconds': firstTokenMilliseconds,
+    if (firstVisibleTokenMilliseconds != null)
+      'firstVisibleTokenMilliseconds': firstVisibleTokenMilliseconds,
     if (thinkingOnly) 'thinkingOnly': true,
     'text': message.text,
     'containsPrivateContext': message.containsPrivateContext,
@@ -100,6 +139,15 @@ class AiChatMessage {
       throw const FormatException('Message exceeds supported size.');
     }
     return AiChatMessage(
+      bookmarked: j['bookmarked'] == true,
+      note: j['note'] as String? ?? '',
+      tags: (j['tags'] as List? ?? []).cast<String>().take(20).toList(),
+      versions: (j['versions'] as List? ?? []).cast<String>().take(10).toList(),
+      outputTokens: j['outputTokens'] as int?,
+      inputTokens: j['inputTokens'] as int?,
+      finishReason: j['finishReason'] as String?,
+      firstTokenMilliseconds: j['firstTokenMilliseconds'] as int?,
+      firstVisibleTokenMilliseconds: j['firstVisibleTokenMilliseconds'] as int?,
       id: j['id'] as String,
       message: AiMessage(
         role: role,
@@ -130,6 +178,7 @@ class AiConversation {
     required this.updatedAt,
     Iterable<AiChatMessage> messages = const [],
     this.folder = '',
+    this.instructions = '',
     this.pinned = false,
     this.archived = false,
     this.deleted = false,
@@ -143,6 +192,7 @@ class AiConversation {
     if (!RegExp(r'^[a-zA-Z0-9_-]{1,100}$').hasMatch(id) ||
         title.length > 200 ||
         folder.length > 100 ||
+        instructions.length > 10000 ||
         this.messages.length > 2000 ||
         revision < 0 ||
         revision > 253402300799999999 ||
@@ -151,7 +201,7 @@ class AiConversation {
       throw const FormatException('Invalid conversation.');
     }
   }
-  final String id, title, folder, origin;
+  final String id, title, folder, origin, instructions;
   final String? profileId;
   final List<AiChatMessage> messages;
   final bool pinned, archived, deleted, shareWithDevices;
@@ -162,6 +212,7 @@ class AiConversation {
     String? id,
     String? title,
     String? folder,
+    String? instructions,
     String? profileId,
     Iterable<AiChatMessage>? messages,
     bool? pinned,
@@ -176,6 +227,7 @@ class AiConversation {
     id: id ?? this.id,
     title: title ?? this.title,
     folder: folder ?? this.folder,
+    instructions: instructions ?? this.instructions,
     profileId: profileId ?? this.profileId,
     messages: messages ?? this.messages,
     pinned: pinned ?? this.pinned,
@@ -192,6 +244,7 @@ class AiConversation {
     'id': id,
     'title': title,
     'folder': folder,
+    if (instructions.isNotEmpty) 'instructions': instructions,
     'pinned': pinned,
     'archived': archived,
     'deleted': deleted,
@@ -213,6 +266,7 @@ class AiConversation {
       id: j['id'] as String,
       title: j['title'] as String,
       folder: j['folder'] as String? ?? '',
+      instructions: j['instructions'] as String? ?? '',
       pinned: j['pinned'] == true,
       archived: j['archived'] == true,
       deleted: j['deleted'] == true,

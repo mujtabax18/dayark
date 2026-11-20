@@ -107,32 +107,64 @@ class AiLocalModelManager {
     token.throwIfCancelled();
   }
 
-  Future<AiLocalModel> _detectModel({required String id, required String name, required String path, required String metadataPath}) async {
+  Future<AiLocalModel> _detectModel({
+    required String id,
+    required String name,
+    required String path,
+    required String metadataPath,
+  }) async {
     final metadata = await GgufMetadata.read(metadataPath);
-    final hardware = _hardware ??= await detectAiHardware(storagePath: directory.path);
-    final context = metadata.chooseContext(hardware.availableMemoryBytes, hardware.totalMemoryBytes);
+    final hardware = _hardware ??= await detectAiHardware(
+      storagePath: directory.path,
+    );
+    final context = math.min(
+      metadata.chooseContext(
+        hardware.availableMemoryBytes,
+        hardware.totalMemoryBytes,
+      ),
+      ['android', 'ios'].contains(hardware.platform) ? 4096 : 8192,
+    );
     AiLocalPerformance? performance;
     try {
       final saved = jsonDecode(await File('$path.perf').readAsString()) as Map;
       final previousContext = saved['contextSize'] as int;
       if (previousContext > 0) {
-        performance = AiLocalPerformance(contextSize: previousContext,
+        performance = AiLocalPerformance(
+          contextSize: previousContext,
           tokensPerSecond: (saved['tokensPerSecond'] as num?)?.toDouble(),
           peakProcessRssBytes: saved['peakProcessRssBytes'] as int?,
-          loadMilliseconds: saved['loadMilliseconds'] as int?);
+          loadMilliseconds: saved['loadMilliseconds'] as int?,
+        );
       }
-    } catch (_) { /* No previous measurements. */ }
+    } catch (_) {
+      /* No previous measurements. */
+    }
     final layers = metadata.layerCount;
     final shared = ['android', 'ios', 'macos'].contains(hardware.platform);
-    final gpuBudget = hardware.vramBytes != null ? hardware.vramBytes! ~/ 2
-        : shared ? (hardware.availableMemoryBytes ?? 0) ~/ 6 : 0;
-    final gpuLayers = layers == null ? 0 : math.min(layers, gpuBudget * layers ~/ metadata.bytes);
-    return AiLocalModel(id: id, name: name, path: path, contextSize: context,
+    final gpuBudget = hardware.vramBytes != null
+        ? hardware.vramBytes! ~/ 2
+        : shared
+        ? (hardware.availableMemoryBytes ?? 0) ~/ 6
+        : 0;
+    final gpuLayers = layers == null
+        ? 0
+        : math.min(layers, gpuBudget * layers ~/ metadata.bytes);
+    return AiLocalModel(
+      id: id,
+      name: name,
+      path: path,
+      contextSize: context,
       gpuLayers: gpuLayers,
-      nativeContextSize: metadata.nativeContext, architecture: metadata.architecture,
+      supportsThinkingControl: metadata.supportsThinkingControl,
+      nativeContextSize: metadata.nativeContext,
+      architecture: metadata.architecture,
       fileType: metadata.fileType,
-      estimatedMemoryBytes: metadata.bytes + (metadata.kvBytesPerToken ?? 0) * context + metadata.bytes ~/ 5,
-      performance: performance);
+      estimatedMemoryBytes:
+          metadata.bytes +
+          (metadata.kvBytesPerToken ?? 0) * context +
+          metadata.bytes ~/ 5,
+      performance: performance,
+    );
   }
 
   Future<AiInstalledModel?> _read(
@@ -157,12 +189,19 @@ class AiLocalModelManager {
     }
     if (verifyContents) await _verify(file, hash, data['bytes'] as int, token);
     return AiInstalledModel(
-      model: verifyContents ? await _detectModel(id: id, name: data['name'] as String, path: file.path, metadataPath: file.path) : AiLocalModel(
-        id: id,
-        path: file.path,
-        name: data['name'] as String,
-        contextSize: data['contextSize'] as int?,
-      ),
+      model: verifyContents
+          ? await _detectModel(
+              id: id,
+              name: data['name'] as String,
+              path: file.path,
+              metadataPath: file.path,
+            )
+          : AiLocalModel(
+              id: id,
+              path: file.path,
+              name: data['name'] as String,
+              contextSize: data['contextSize'] as int?,
+            ),
       revision: data['revision'] as String,
       sha256: hash,
       bytes: data['bytes'] as int,
@@ -345,7 +384,12 @@ class AiLocalModelManager {
       await _verify(staging, hash, artifact.bytes, token);
       _hardware = await detectAiHardware(storagePath: directory.path);
       final record = AiInstalledModel(
-        model: await _detectModel(id: entry.id, name: entry.name, path: target.path, metadataPath: staging.path),
+        model: await _detectModel(
+          id: entry.id,
+          name: entry.name,
+          path: target.path,
+          metadataPath: staging.path,
+        ),
         revision: artifact.revision,
         sha256: hash,
         bytes: artifact.bytes,
@@ -408,6 +452,91 @@ class AiLocalModelManager {
     }
   });
 
+  /// Copies an explicitly chosen GGUF into owned storage with a hash and an
+  /// atomic manifest. The source file is never moved or deleted.
+  Future<AiInstalledModel> importFile(
+    String sourcePath, {
+    required String id,
+    required String name,
+    AiCancellationToken? cancellationToken,
+  }) => _exclusive(() async {
+    _validateId(id);
+    final token = cancellationToken ?? AiCancellationToken();
+    if (await _manifest(id).exists()) {
+      throw StateError('Model ID already exists.');
+    }
+    await directory.create(recursive: true);
+    final staging = File(p.join(directory.path, '$id.import.part'));
+    final temporaryManifest = File('${_manifest(id).path}.part');
+    File? target;
+    var committed = false;
+    try {
+      final sink = staging.openWrite();
+      try {
+        await for (final chunk in File(sourcePath).openRead()) {
+          token.throwIfCancelled();
+          sink.add(chunk);
+          await sink.flush();
+        }
+      } finally {
+        await sink.close();
+      }
+      final bytes = await staging.length();
+      final hash =
+          (await sha256
+                  .bind(
+                    staging.openRead().map((chunk) {
+                      token.throwIfCancelled();
+                      return chunk;
+                    }),
+                  )
+                  .first)
+              .toString();
+      target = File(p.join(directory.path, '$id-$hash.gguf'));
+      final model = await _detectModel(
+        id: id,
+        name: name,
+        path: target.path,
+        metadataPath: staging.path,
+      );
+      final record = AiInstalledModel(
+        model: model,
+        revision: 'local-import',
+        sha256: hash,
+        bytes: bytes,
+      );
+      await temporaryManifest.writeAsString(
+        jsonEncode({
+          'name': name,
+          'contextSize': model.contextSize,
+          'nativeContextSize': model.nativeContextSize,
+          'architecture': model.architecture,
+          'sha256': hash,
+          'bytes': bytes,
+          'revision': 'local-import',
+        }),
+        flush: true,
+      );
+      token.throwIfCancelled();
+      await provider.maintainModel(id, () async {
+        token.throwIfCancelled();
+        await staging.rename(target!.path);
+        await temporaryManifest.rename(_manifest(id).path);
+        committed = true;
+        return model;
+      }, cancellationToken: token);
+      return record;
+    } finally {
+      for (final file in [
+        staging,
+        temporaryManifest,
+        if (!committed && target != null) target,
+      ]) {
+        if (await file.exists()) await file.delete();
+      }
+    }
+  });
+
   Future<void> delete(
     String id, {
     AiCancellationToken? cancellationToken,
@@ -430,19 +559,21 @@ class AiLocalModelManager {
     }, cancellationToken: token);
   });
 
-  Future<AiInstalledModel> load(String id, {AiCancellationToken? cancellationToken}) =>
-      _exclusive(() async {
-        final token = cancellationToken ?? AiCancellationToken();
-        final record = await _read(id, token);
-        if (record == null) throw ArgumentError('Model is not installed.');
-        await provider.maintainModel(
-          id,
-          () async => record.model,
-          cancellationToken: token,
-        );
-        await provider.loadModel(id, cancellationToken: token);
-        return record;
-      });
+  Future<AiInstalledModel> load(
+    String id, {
+    AiCancellationToken? cancellationToken,
+  }) => _exclusive(() async {
+    final token = cancellationToken ?? AiCancellationToken();
+    final record = await _read(id, token);
+    if (record == null) throw ArgumentError('Model is not installed.');
+    await provider.maintainModel(
+      id,
+      () async => record.model,
+      cancellationToken: token,
+    );
+    await provider.loadModel(id, cancellationToken: token);
+    return record;
+  });
   Future<void> unload() => _exclusive(() => provider.unloadModel());
   void close() {
     if (_busy) throw StateError('Wait for the model operation before closing.');

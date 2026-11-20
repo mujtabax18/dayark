@@ -68,7 +68,7 @@ void main() {
     expect(response.message.text, 'Hello!');
     expect(runtime.request!.messages.single.text, 'hello');
     expect(prepared, runtime.request!.messages);
-    expect(runtime.request!.settings.maxOutputTokens, isNull);
+    expect(runtime.request!.settings.maxOutputTokens, 2048);
   });
 
   LlamaChatMessage message(LlamaChatRole role, String text) =>

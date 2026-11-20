@@ -51,6 +51,13 @@ assumptions:
     verification: On 2026-11-17, 51 targeted Flutter tests passed across streaming, controller, chat UI, settings and HTTP provider suites. The configured-assistant test saved a 2048-token cap and observed num_predict -1 on the actual HTTP request while preserving saved preferences. Widget tests expanded live thinking, checked the local performance tooltip, then observed the completed answer. Provider-limit fixtures verify a specific explanation when generation ends with length and no answer. Existing Postman mocks were not changed or rerun in this session; loopback HTTP fixtures provided the necessary thinking and length frames. No live inference was performed. Prior cold-start evidence above remains historical; reasoning is now accessible in the live thinking panel.
     source: test/ai/ai_streaming_test.dart; test/ai/ai_chat_controller_test.dart; test/ai/ai_chat_screen_test.dart; lib/ai/settings/ai_configured_assistant.dart; lib/ai/providers/http/ai_http_transport.dart; https://github.com/ollama/ollama/blob/main/docs/modelfile.mdx
     updated_at: '2026-11-17'
+  - id: configured-output-budgets-restored
+    status: supported
+    claim: Configured DayArk chat preserves saved offline and Ollama output budgets, and temporary Ollama overrides reach num_predict as positive limits.
+    reason: The 2026-11-17 unbounded-chat behavior above was deliberately superseded by the workspace performance requirements. Actual loopback adapter tests assert configured limits and overrides; the existing five-provider simulation still exercises successful streaming and continued history. This does not establish that every external provider honors its requested limit.
+    verification: On 2026-11-20, real Dart adapters passed connection, discovery, generation, streaming and continued-history checks against Postman CLI 1.74.0 on loopback port 4017. Request events were observed for every member. Flutter HTTP tests assert num_predict 32, configured 2048 and temporary 128; native context tests assert preserved budgets and output reservation. Existing synthetic contract-derived mocks were reused without publication or vendor requests. No model-speed improvement was inferred from these tests.
+    source: tool/ai/verify_provider_simulation.dart; test/ai/ai_streaming_test.dart; test/ai/ai_http_provider_test.dart; test/ai/ai_local_context_regression_test.dart; docs/AI_WORKSPACE.md
+    updated_at: '2026-11-20'
 fingerprints:
   - id: part2-working-tree
     date: '2026-11-16'

@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mime/mime.dart';
@@ -15,10 +16,12 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../services/device_sync/device_sync_service.dart';
+import '../../utlis/app_router.dart';
 import '../core/ai_attachments.dart';
 import '../core/ai_capabilities.dart';
 import '../core/ai_cancellation.dart';
 import '../core/ai_error.dart';
+import '../core/ai_stream.dart';
 import '../core/ai_input_preparation.dart';
 import '../providers/http/http_ai_provider.dart';
 import '../settings/ai_settings.dart';
@@ -40,6 +43,24 @@ import 'ai_chat_controller.dart';
 import 'ai_chat_notifications.dart';
 import 'ai_chat_store.dart';
 import 'ai_conversation.dart';
+import 'ai_workspace_store.dart';
+import '../settings/ai_local_models_factory.dart';
+import '../settings/ai_local_models.dart';
+import '../settings/ai_local_models_page.dart';
+import '../performance/performance_profile.dart';
+import 'widgets/ai_workspace_inspector.dart';
+import 'widgets/ai_chat_welcome.dart';
+
+part 'ai_chat_workspace.dart';
+part 'ai_chat_dialogs.dart';
+part 'ai_chat_management.dart';
+part 'ai_chat_preparation.dart';
+part 'ai_chat_actions.dart';
+part 'ai_chat_preferences.dart';
+part 'ai_chat_composer.dart';
+part 'ai_chat_history.dart';
+part 'ai_chat_message.dart';
+part 'ai_chat_library.dart';
 
 enum _HistoryAction { pin, move }
 
@@ -51,17 +72,31 @@ class AiChatScreen extends StatefulWidget {
     this.settings,
     this.engine,
     this.sync,
+    this.localModels,
+    this.memory,
   });
   final AiChatStore? store;
   final AiSettingsStore? settings;
   final AiChatStream? engine;
   final Future<String> Function()? sync;
+  final Future<AiLocalModels> Function()? localModels;
+  final Future<MemoryManager> Function()? memory;
   @override
   State<AiChatScreen> createState() => _AiChatHostState();
 }
 
 class _AiChatHostState extends State<AiChatScreen> {
   final _navigator = GlobalKey<NavigatorState>();
+  void _back() {
+    // This context belongs to the application route, outside the pane navigator.
+    final navigator = Navigator.of(context);
+    if (navigator.canPop()) {
+      navigator.pop();
+    } else {
+      GoRouter.maybeOf(context)?.go(RoutesStr.home);
+    }
+  }
+
   @override
   Widget build(BuildContext context) => ClipRect(
     child: NavigatorPopHandler<void>(
@@ -74,6 +109,9 @@ class _AiChatHostState extends State<AiChatScreen> {
             settings: widget.settings,
             engine: widget.engine,
             sync: widget.sync,
+            localModels: widget.localModels,
+            memory: widget.memory,
+            onBack: _back,
           ),
         ),
       ),
@@ -82,11 +120,22 @@ class _AiChatHostState extends State<AiChatScreen> {
 }
 
 class _AiChatPane extends ConsumerStatefulWidget {
-  const _AiChatPane({this.store, this.settings, this.engine, this.sync});
+  const _AiChatPane({
+    this.store,
+    this.settings,
+    this.engine,
+    this.sync,
+    this.localModels,
+    this.memory,
+    required this.onBack,
+  });
   final AiChatStore? store;
   final AiSettingsStore? settings;
   final AiChatStream? engine;
   final Future<String> Function()? sync;
+  final Future<AiLocalModels> Function()? localModels;
+  final Future<MemoryManager> Function()? memory;
+  final VoidCallback onBack;
   @override
   ConsumerState<_AiChatPane> createState() => _AiChatScreenState();
 }
@@ -94,10 +143,316 @@ class _AiChatPane extends ConsumerStatefulWidget {
 class _AiChatScreenState extends ConsumerState<_AiChatPane>
     with WidgetsBindingObserver {
   AiChatController? _chat;
+  AiWorkspaceStore? _workspace;
+  AiSettings? _nextResponseSettings;
+  String _nextResponseInstructions = '';
+  AiCapabilities Function(String)? _offlineCapabilities;
+  Future<MemoryManager>? _memoryFuture;
+  Future<AiLocalModels>? _modelsFuture;
+  Future<AiLocalModels> _getLocalModels() =>
+      _modelsFuture ??= (widget.localModels ?? sharedAiLocalModels)()
+          .then((models) {
+            if (mounted) {
+              _loadedLocalModels = models;
+              _offlineCapabilities = models.provider?.capabilitiesFor;
+              _capabilitiesKey = null;
+            }
+            return models;
+          })
+          .catchError((Object error) {
+            _modelsFuture = null;
+            throw error;
+          });
+  AiLocalModels? _loadedLocalModels;
+
+  Future<T> _awaitResource<T>(
+    Future<T> resource,
+    AiCancellationToken token,
+  ) async {
+    token.throwIfCancelled();
+    final cancelled = Completer<T>();
+    final remove = token.onCancel(
+      () => cancelled.completeError(
+        const AiException(AiErrorCode.cancelled, 'AI request cancelled.'),
+      ),
+    );
+    try {
+      return await Future.any([resource, cancelled.future]);
+    } finally {
+      remove();
+    }
+  }
+
+  Stream<AiStreamEvent> _configuredStream({
+    required AiSettingsStore settings,
+    required AiChatStore store,
+    required AiMessage message,
+    required Iterable<AiMessage> history,
+    required String? profileId,
+    required AiCancellationToken cancellationToken,
+  }) async* {
+    final preferences = settings.load();
+    final profile = preferences.profiles
+        .where((p) => p.id == profileId)
+        .firstOrNull;
+    AiLocalModels? local;
+    if (profile?.kind == AiProviderKind.offline) {
+      yield const AiStreamEvent.activity(diagnostic: 'Loading model…');
+      final ready = await _awaitResource<AiLocalModels>(
+        _getLocalModels(),
+        cancellationToken,
+      );
+      local = ready;
+      _loadedLocalModels = ready;
+      _offlineCapabilities = ready.provider?.capabilitiesFor;
+      _capabilitiesKey = null;
+      if (ready.busy) {
+        throw const AiException(
+          AiErrorCode.providerUnavailable,
+          'Local model maintenance is in progress.',
+        );
+      }
+    }
+    final memory = preferences.settings.useMemory
+        ? await _awaitResource<MemoryManager>(
+            _memoryFuture ??= (widget.memory ?? sharedMemoryManager)()
+                .catchError((Object error) {
+                  _memoryFuture = null;
+                  throw error;
+                }),
+            cancellationToken,
+          )
+        : null;
+    cancellationToken.throwIfCancelled();
+    final assistant = AiConfiguredAssistant(
+      settings,
+      memory: memory == null
+          ? null
+          : MemoryContextService(memory, chats: store),
+    );
+    yield* assistant.stream(
+      settingsOverride: _takeNextSettings(),
+      offline: local?.provider,
+      message: message,
+      history: history,
+      profileId: profileId,
+      cancellationToken: cancellationToken,
+      onPreparedMessages: (messages) {
+        if (!mounted) return;
+        setState(() {
+          _lastPrompt = messages;
+          _lastPromptChatId = _chat?.active?.id;
+        });
+      },
+    );
+  }
+
+  AiSettings _takeNextSettings() {
+    final value = _responseSettings();
+    _nextResponseSettings = null;
+    _nextResponseInstructions = '';
+    return value;
+  }
+
+  AiSettings _responseSettings() {
+    final settings = _nextResponseSettings ?? _settings!.load().settings;
+    final instructions = [
+      settings.customInstructions,
+      if (_chat?.active?.instructions.isNotEmpty ?? false)
+        'Conversation preferences (override global preferences):\n${_chat!.active!.instructions}',
+      if (_nextResponseInstructions.isNotEmpty)
+        'For this response (override other user preferences):\n$_nextResponseInstructions',
+    ].where((s) => s.isNotEmpty).join('\n\n');
+    return AiSettings.fromJson({
+      ...settings.toJson(),
+      'customInstructions': instructions,
+    });
+  }
+
+  bool _sidebarCollapsed = false, _inspector = true, _favouritesOnly = false;
+  double _sidebarWidth = 240;
+  final _composerFocus = FocusNode(), _searchFocus = FocusNode();
+  Timer? _draftTimer;
+  // Cached completed message widgets are retained by identity across stream updates.
+  Object? _messageTheme;
+  bool? _messageBusy;
+  String? _messageChatId;
+  int? _messageCount;
+  final _messageWidgets = <String, (AiChatMessage, Widget)>{};
+
+  void _update(VoidCallback action) => setState(action);
+  void _newChat() {
+    if (_chat!.busy || _preparing) return;
+    _saveDraft();
+    _chat!.newChat();
+    _composer.text = _workspace?.draft(null) ?? '';
+    _update(() {
+      _attachments.clear();
+      _draftPrivate = false;
+      _draftRetryIndex = null;
+    });
+  }
+
+  void _saveDraft() {
+    final workspace = _workspace;
+    if (workspace != null) {
+      unawaited(workspace.saveDraft(_chat?.active?.id, _composer.text));
+    }
+  }
+
+  void _draftChanged() {
+    _draftTimer?.cancel();
+    _draftTimer = Timer(const Duration(milliseconds: 400), _saveDraft);
+  }
+
+  void _toggleSidebar() {
+    _update(() => _sidebarCollapsed = !_sidebarCollapsed);
+    unawaited(_workspace!.layout(collapsed: _sidebarCollapsed));
+  }
+
+  void _toggleInspector() {
+    _update(() => _inspector = !_inspector);
+    unawaited(_workspace!.layout(inspector: _inspector));
+  }
+
+  Future<void> _performance(AiPerformanceProfile profile) async {
+    if (_chat!.busy || _preparing) return;
+    final mobile =
+        Theme.of(context).platform == TargetPlatform.android ||
+        Theme.of(context).platform == TargetPlatform.iOS;
+    final current = _settings!.load();
+    final settings = profile == AiPerformanceProfile.custom
+        ? AiSettings.fromJson({
+            ...current.settings.toJson(),
+            'performanceProfile': 'custom',
+          })
+        : profile.apply(current.settings, mobile: mobile);
+    final value = AiPreferences(
+      profiles: current.profiles,
+      selectedProfileId: current.selectedProfileId,
+      settings: settings,
+      allowOnlineProcessing: current.allowOnlineProcessing,
+      allowPrivateContextOnline: current.allowPrivateContextOnline,
+    );
+    try {
+      await _settings!.save(value);
+      if (mounted) _update(() => _preferences = value);
+    } catch (_) {
+      if (mounted) _notice('Unable to save performance preferences.');
+    }
+  }
+
+  Future<void> _continue() => _send(
+    edited: AiMessage(
+      role: AiRole.user,
+      text: 'Continue the previous answer from where it stopped. Do not repeat the existing text.',
+    ),
+  );
+  Future<void> _redirect({bool answerNow = false}) async {
+    final instruction = answerNow
+        ? 'Give the final answer now, concisely. Use the work above and do not repeat the reasoning.'
+        : await _editText(
+            'Add instructions',
+            '',
+            action: 'Restart with instructions',
+            note: 'The current response will be stopped and preserved. A new request will use your instruction.',
+          );
+    if (!mounted || instruction == null || instruction.trim().isEmpty) return;
+    if (answerNow) {
+      _nextResponseSettings = AiSettings.fromJson({
+        ..._preferences.settings.toJson(),
+        'thinking': false,
+      });
+    }
+    await _chat!.redirect(
+      instruction,
+      profileId: _profileId,
+      provider: _profile?.kind.name,
+      model: _profile?.modelId,
+    );
+  }
+
+  void _queueDraft() {
+    if (_profileId == null ||
+        (_composer.text.trim().isEmpty && _attachments.isEmpty)) {
+      return;
+    }
+    final accepted = _chat!.enqueue(
+      AiQueuedMessage(
+        message: AiMessage(
+          role: AiRole.user,
+          text: _composer.text.trim(),
+          attachments: List.of(_attachments),
+          containsPrivateContext: _draftPrivate,
+        ),
+        profileId: _profileId!,
+        provider: _profile?.kind.name,
+        model: _profile?.modelId,
+      ),
+    );
+    if (accepted) {
+      _update(() {
+        _composer.clear();
+        _attachments.clear();
+        _draftPrivate = false;
+      });
+    } else {
+      _notice('Queue is full. Keep up to 10 messages.');
+    }
+  }
+
   AiSettingsStore? _settings;
   AiPreferences _preferences = AiPreferences();
   final _composer = TextEditingController(), _search = TextEditingController();
-  final _scroll = ScrollController();
+  final _scroll = ScrollController(debugLabel: 'ai-chat-messages');
+  ScrollPosition? get _scrollPosition =>
+      _scroll.positions.length == 1 ? _scroll.positions.single : null;
+  bool _enterToSend = false;
+  bool get _desktopPlatform => switch (Theme.of(context).platform) {
+    TargetPlatform.windows ||
+    TargetPlatform.linux ||
+    TargetPlatform.macOS => true,
+    _ => false,
+  };
+  void _submitComposer() {
+    if (_syncing || _preparing || _chat == null) return;
+    if (_chat!.busy) {
+      _queueDraft();
+    } else {
+      unawaited(_send());
+    }
+  }
+
+  KeyEventResult _composerKey(FocusNode _, KeyEvent event) {
+    if ((event.logicalKey != LogicalKeyboardKey.enter &&
+            event.logicalKey != LogicalKeyboardKey.numpadEnter) ||
+        HardwareKeyboard.instance.isControlPressed ||
+        HardwareKeyboard.instance.isMetaPressed ||
+        HardwareKeyboard.instance.isAltPressed ||
+        !_composer.value.composing.isCollapsed) {
+      return KeyEventResult.ignored;
+    }
+    if (event is KeyDownEvent) {
+      if (_enterToSend && !HardwareKeyboard.instance.isShiftPressed) {
+        _submitComposer();
+      } else {
+        final value = _composer.value;
+        final start = value.selection.isValid
+            ? value.selection.start
+            : value.text.length;
+        final end = value.selection.isValid
+            ? value.selection.end
+            : value.text.length;
+        _composer.value = value.copyWith(
+          text: value.text.replaceRange(start, end, '\n'),
+          selection: TextSelection.collapsed(offset: start + 1),
+          composing: TextRange.empty,
+        );
+      }
+    }
+    return KeyEventResult.handled;
+  }
+
   final _attachments = <AiAttachment>[];
   String? _profileId, _error;
   bool _syncEnabled = false, _syncing = false, _replyNotifications = true;
@@ -117,30 +472,46 @@ class _AiChatScreenState extends ConsumerState<_AiChatPane>
   }
 
   @override
+  void didHaveMemoryPressure() {
+    aiDocumentTextCache.clear();
+    _messageWidgets.clear();
+    final local = _loadedLocalModels;
+    if (local != null && !local.busy && _chat?.busy != true) {
+      unawaited(local.unload().catchError((Object _) {}));
+    }
+  }
+
+  @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     _lifecycle = state;
   }
 
   Future<void> _init() async {
     try {
-      final store = widget.store ?? await sharedAiChatStore();
-      final settings =
-          widget.settings ??
-          AiSettingsStore(preferences: await SharedPreferences.getInstance());
-      final enabled = await store.syncEnabled;
-      final notifications = await store.replyNotificationsEnabled;
+      if (mounted) setState(() => _error = null);
+      // Only small chat preferences/storage reads gate entry. Model restore,
+      // hashing, hardware probes and memory are deferred until a request.
+      final (store, settings, enabled, notifications) = await (() async {
+        final store = widget.store ?? await sharedAiChatStore();
+        final settings =
+            widget.settings ??
+            AiSettingsStore(preferences: await SharedPreferences.getInstance());
+        final enabled = await store.syncEnabled;
+        final notifications = await store.replyNotificationsEnabled;
+        return (store, settings, enabled, notifications);
+      })().timeout(const Duration(seconds: 15));
       if (!mounted) return;
       _settings = settings;
+      _workspace = AiWorkspaceStore(settings.preferences);
+      _sidebarCollapsed = _workspace!.sidebarCollapsed;
+      _sidebarWidth = _workspace!.sidebarWidth;
+      _inspector = _workspace!.inspector;
+      _enterToSend = _workspace!.enterToSend;
+      _composer.text = _workspace!.draft(null);
+      _composer.removeListener(_draftChanged);
+      _composer.addListener(_draftChanged);
       _preferences = settings.load();
       _profileId = _preferences.selectedProfileId;
-      final memory = widget.engine == null ? await sharedMemoryManager() : null;
-      if (!mounted) return;
-      final assistant = AiConfiguredAssistant(
-        settings,
-        memory: memory == null
-            ? null
-            : MemoryContextService(memory, chats: store),
-      );
       _chat = AiChatController(
         store: store,
         engine:
@@ -150,25 +521,30 @@ class _AiChatScreenState extends ConsumerState<_AiChatPane>
               required history,
               required profileId,
               required cancellationToken,
-            }) => assistant.stream(
+            }) => _configuredStream(
+              settings: settings,
+              store: store,
               message: message,
               history: history,
               profileId: profileId,
               cancellationToken: cancellationToken,
-              onPreparedMessages: (messages) {
-                if (!mounted) return;
-                setState(() {
-                  _lastPrompt = messages;
-                  _lastPromptChatId = _chat?.active?.id;
-                });
-              },
             ),
       );
       _chat!.addListener(_changed);
       _syncEnabled = enabled;
       _replyNotifications = notifications;
-      await _chat!.refresh();
-      if (mounted) setState(() {});
+      // A slow history read must not hide the composer or the back button.
+      final chat = _chat!;
+      setState(() {});
+      unawaited(
+        chat.refresh().timeout(const Duration(seconds: 15)).catchError((
+          Object _,
+        ) {
+          if (!mounted || !identical(_chat, chat)) return;
+          chat.status = 'Unable to load chat history. Check storage and retry from Search.';
+          _changed();
+        }),
+      );
     } catch (_) {
       if (mounted) {
         setState(
@@ -183,15 +559,15 @@ class _AiChatScreenState extends ConsumerState<_AiChatPane>
     if (!mounted) return;
     if (_framePending) return;
     _framePending = true;
-    final follow = !_scroll.hasClients || _scroll.offset < 160;
+    final follow = (_scrollPosition?.pixels ?? 0) < 160;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _framePending = false;
       if (!mounted) return;
       setState(() {});
       if (follow) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted && _scroll.hasClients) {
-            _scroll.jumpTo(0);
+          if (mounted) {
+            _scrollPosition?.jumpTo(0);
           }
         });
       }
@@ -204,11 +580,18 @@ class _AiChatScreenState extends ConsumerState<_AiChatPane>
   Future<void> _settingsPage() async {
     await Navigator.push<void>(
       context,
-      MaterialPageRoute(builder: (_) => AiSettingsScreen(store: _settings, promptPreview: _showPrompts)),
+      MaterialPageRoute(
+        builder: (_) => AiSettingsScreen(
+          store: _settings,
+          promptPreview: _showPrompts,
+          localModels: _getLocalModels,
+        ),
+      ),
     );
     if (!mounted) return;
     setState(() {
       _preferences = _settings!.load();
+      _enterToSend = _workspace!.enterToSend;
       if (_profile == null) _profileId = _preferences.selectedProfileId;
     });
   }
@@ -241,157 +624,9 @@ class _AiChatScreenState extends ConsumerState<_AiChatPane>
     await _chat!.update(profileId: id);
   }
 
-  String _promptText(List<AiMessage> messages) => messages.isEmpty
-      ? 'No messages.'
-      : messages
-            .asMap()
-            .entries
-            .map((entry) {
-              final message = entry.value;
-              return '[${entry.key + 1} · ${message.role.name}]\n${message.text}'
-                  '${message.attachments.map((a) => '\n[Attachment: ${a.name ?? 'unnamed'} · ${a.mimeType} · ${a.bytes?.length ?? 0} bytes]').join()}';
-            })
-            .join('\n\n');
-
-  Widget _promptPanel(String text) => SingleChildScrollView(
-    padding: const EdgeInsets.symmetric(vertical: 12),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Draft shows instructions, history and your message. Memory and file text '
-          'are added during preparation. Latest request shows the prepared messages '
-          'for this chat. Providers apply their chat template; local models may trim older history. '
-          'Attachments are listed by name, type and size. Extra prompt switches DayArk instructions, '
-          'your instructions and language preferences on or off. Opted-in memory is controlled separately.',
-        ),
-        const SizedBox(height: 16),
-        SelectableText(text),
-      ],
-    ),
-  );
-
-  Future<void> _showPrompts() async {
-    final settings = _settings!.load().settings;
-    final history = (_chat!.active?.messages ?? <AiChatMessage>[])
-        .where((m) => m.state == AiChatMessageState.complete)
-        .map((m) => m.message);
-    final emptyDraft = _composer.text.trim().isEmpty && _attachments.isEmpty;
-    final built = const PromptManager().build(
-      settings: settings,
-      history: history,
-      message: AiMessage(
-        role: AiRole.user,
-        text: emptyDraft ? 'Empty draft' : _composer.text.trim(),
-        attachments: _attachments,
-      ),
-    );
-    final draft = emptyDraft ? built.take(built.length - 1).toList() : built;
-    final last = _lastPromptChatId == _chat!.active?.id ? _lastPrompt : null;
-    await showDialog<void>(
-      context: context,
-      useRootNavigator: false,
-      builder: (context) => DefaultTabController(
-        length: 2,
-        child: AlertDialog(
-          constraints: const BoxConstraints(maxWidth: 760, maxHeight: 680),
-          title: const Text('Prompts sent to AI'),
-          content: SizedBox(
-            width: 700,
-            height: 480,
-            child: Column(
-              children: [
-                const TabBar(
-                  tabs: [
-                    Tab(text: 'Draft'),
-                    Tab(text: 'Latest request'),
-                  ],
-                ),
-                Expanded(
-                  child: TabBarView(
-                    children: [
-                      _promptPanel(_promptText(draft)),
-                      _promptPanel(
-                        last == null
-                            ? 'Send a message to see its prepared request here. This view is kept only while chat is open.'
-                            : _promptText(last),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Close'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _chatPreferences() => showModalBottomSheet<void>(
-    context: context,
-    useRootNavigator: false,
-    showDragHandle: true,
-    constraints: const BoxConstraints(maxWidth: 560),
-    builder: (context) => StatefulBuilder(
-      builder: (context, update) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              title: Text(
-                'Chat preferences',
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-            ),
-            SwitchListTile.adaptive(
-              title: const Text('Automatic paired-device sync'),
-              subtitle: const Text(
-                'Share AI conversations with your paired devices.',
-              ),
-              value: _syncEnabled,
-              onChanged: (value) async {
-                await _chat!.store.setSyncEnabled(value);
-                if (!mounted || !context.mounted) return;
-                setState(() => _syncEnabled = value);
-                update(() {});
-              },
-            ),
-            ListTile(
-              title: const Text('Sync shared chats now'),
-              leading: const Icon(Icons.sync),
-              enabled: _syncEnabled,
-              onTap: !_syncEnabled
-                  ? null
-                  : () {
-                      Navigator.pop(context);
-                      unawaited(_sync());
-                    },
-            ),
-            SwitchListTile.adaptive(
-              title: const Text('Reply-ready notifications'),
-              value: _replyNotifications,
-              onChanged: (value) async {
-                await _chat!.store.setReplyNotificationsEnabled(value);
-                if (!mounted || !context.mounted) return;
-                setState(() => _replyNotifications = value);
-                update(() {});
-              },
-            ),
-            const SizedBox(height: 16),
-          ],
-        ),
-      ),
-    ),
-  );
-
   Future<void> _select(AiConversation c) async {
     if (_preparing) return;
+    _saveDraft();
     await _chat!.select(c.id);
     if (!mounted) return;
     setState(() {
@@ -400,176 +635,13 @@ class _AiChatScreenState extends ConsumerState<_AiChatPane>
           ? _chat!.active!.profileId
           : _preferences.selectedProfileId;
       _attachments.clear();
-      _composer.clear();
+      _composer.text = _workspace?.draft(c.id) ?? '';
       _draftPrivate = false;
       _draftRetryIndex = null;
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scroll.hasClients) _scroll.jumpTo(0);
+      _scrollPosition?.jumpTo(0);
     });
-  }
-
-  Future<String?> _editText(
-    String title,
-    String initial, {
-    String action = 'Save',
-    String? note,
-  }) => showDialog<String>(
-    context: context,
-    useRootNavigator: false,
-    builder: (_) => _AiChatTextDialog(
-      title: title,
-      initial: initial,
-      action: action,
-      note: note,
-    ),
-  );
-
-  Future<void> _action(String action) async {
-    final chat = _chat!;
-    if (chat.busy) return;
-    final c = chat.active;
-    try {
-      switch (action) {
-        case 'rename':
-          final name = await _editText('Rename conversation', c!.title);
-          if (name?.isNotEmpty ?? false) await chat.update(title: name);
-        case 'folder':
-          final name = await _chooseFolder(c!.folder);
-          if (name != null) await chat.update(folder: name);
-        case 'pin':
-          await chat.update(pinned: !c!.pinned);
-        case 'archive':
-          await chat.update(archived: !c!.archived);
-        case 'delete':
-          final yes = await showDialog<bool>(
-            context: context,
-            useRootNavigator: false,
-            builder: (context) => AlertDialog(
-              title: const Text('Delete conversation?'),
-              content: const Text(
-                'Messages and attachments will be removed. Shared deletion will sync to opted-in devices.',
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context, false),
-                  child: const Text('Cancel'),
-                ),
-                FilledButton(
-                  onPressed: () => Navigator.pop(context, true),
-                  child: const Text('Delete'),
-                ),
-              ],
-            ),
-          );
-          if (yes == true) await chat.remove();
-        case 'json':
-        case 'md':
-        case 'txt':
-          final bytes = Uint8List.fromList(
-            utf8.encode(chat.store.export(c!, action)),
-          );
-          await SharePlus.instance.share(
-            ShareParams(
-              files: [
-                XFile.fromData(
-                  bytes,
-                  mimeType: action == 'json'
-                      ? 'application/json'
-                      : 'text/plain',
-                ),
-              ],
-              fileNameOverrides: ['dayark-chat-${c.id}.$action'],
-              sharePositionOrigin: _shareOrigin,
-            ),
-          );
-      }
-    } catch (_) {
-      _notice('Unable to update or export this conversation.');
-    }
-  }
-
-  Rect? get _shareOrigin {
-    final render = context.findRenderObject();
-    return render is RenderBox
-        ? render.localToGlobal(Offset.zero) & render.size
-        : null;
-  }
-
-  void _notice(String message) {
-    if (mounted) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(message)));
-    }
-  }
-
-  Future<void> _pick({bool images = false}) async {
-    try {
-      final result = await FilePicker.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: images
-            ? ['png', 'jpg', 'jpeg', 'webp']
-            : ['pdf', 'txt', 'md'],
-      );
-      if (result.isEmpty || !mounted) return;
-      if (_attachments.length + result.length > 8) {
-        throw const FormatException(
-          'You can attach up to 8 files. Please remove some files.',
-        );
-      }
-      final picked = <AiAttachment>[];
-      for (final file in result) {
-        if (await file.length() > aiMaxAttachmentBytes) {
-          throw const FormatException(
-            'This file exceeds the 8 MiB limit. Please use a smaller file.',
-          );
-        }
-        final buffer = BytesBuilder(copy: false);
-        await for (final chunk in file.readAsByteStream()) {
-          if (buffer.length + chunk.length > aiMaxAttachmentBytes) {
-            throw const FormatException(
-              'This file exceeds the 8 MiB limit. Please use a smaller file.',
-            );
-          }
-          buffer.add(chunk);
-        }
-        final bytes = buffer.takeBytes();
-        final mime = file.extension?.toLowerCase() == 'md'
-            ? 'text/markdown'
-            : file.extension?.toLowerCase() == 'txt'
-            ? 'text/plain'
-            : lookupMimeType(file.name, headerBytes: bytes.take(32).toList());
-        final id = const Uuid().v4();
-        final a = AiAttachment(
-          id: id,
-          uri: Uri(scheme: 'attachment', path: id),
-          mimeType: mime ?? 'application/octet-stream',
-          kind: mime?.startsWith('image/') == true
-              ? AiAttachmentKind.image
-              : AiAttachmentKind.document,
-          name: file.name,
-          bytes: bytes,
-        );
-        validateAiAttachment(a);
-        picked.add(a);
-      }
-      final total = [..._attachments, ...picked];
-      if (total.fold<int>(0, (sum, a) => sum + a.bytes!.length) >
-          aiMaxRequestAttachmentBytes) {
-        throw const FormatException(
-          'The selected files exceed 16 MiB together. Please use fewer or smaller files.',
-        );
-      }
-      if (mounted) setState(() => _attachments.addAll(picked));
-    } on AiException catch (error) {
-      _notice(error.message);
-    } on FormatException catch (error) {
-      _notice(error.message);
-    } catch (_) {
-      _notice(
-        'Unable to read this file. Try a readable PNG, JPEG, WebP, PDF, UTF-8 TXT or Markdown file.',
-      );
-    }
   }
 
   String? _capabilitiesKey;
@@ -579,7 +651,9 @@ class _AiChatScreenState extends ConsumerState<_AiChatPane>
     if (_capabilitiesKey == key && _capabilities != null) return _capabilities!;
     _capabilitiesKey = key;
     if (_profile!.kind == AiProviderKind.offline) {
-      return _capabilities = AiCapabilities(contextWindow: true);
+      return _capabilities =
+          _offlineCapabilities?.call(_profile!.modelId) ??
+          AiCapabilities(contextWindow: true);
     }
     final provider = _profile!.createProvider(credentials: () async => null);
     try {
@@ -587,162 +661,6 @@ class _AiChatScreenState extends ConsumerState<_AiChatPane>
     } finally {
       if (provider is HttpAiProvider) provider.close();
     }
-  }
-
-  Future<void> _summarizeInput(
-    AiMessage prepared,
-    AiSettings settings,
-    int budget,
-    int? retryIndex,
-  ) async {
-    final progress = ValueNotifier('Preparing text…');
-    final thoughts = ValueNotifier('');
-    var thoughtBuffer = StringBuffer();
-    Timer? thoughtRefresh;
-    final token = AiCancellationToken();
-    _preparationToken = token;
-    final summarySettings = AiSettings.fromJson({
-      ...settings.toJson(),
-      'maxOutputTokens': 128,
-      'thinking': false,
-    });
-    final engine =
-        widget.engine ??
-        ({
-          required message,
-          required history,
-          required profileId,
-          required cancellationToken,
-        }) => AiConfiguredAssistant(_settings!).stream(
-          message: message,
-          history: history,
-          profileId: profileId,
-          cancellationToken: cancellationToken,
-          settingsOverride: summarySettings,
-        );
-    final dialog = showDialog<void>(
-      context: context,
-      useRootNavigator: false,
-      barrierDismissible: false,
-      builder: (context) => PopScope(
-        canPop: false,
-        child: AlertDialog(
-          constraints: const BoxConstraints(maxWidth: 440, maxHeight: 400),
-          scrollable: true,
-          title: const Text('Summarizing input'),
-          content: ValueListenableBuilder<String>(
-            valueListenable: progress,
-            builder: (_, value, _) => Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const LinearProgressIndicator(),
-                const SizedBox(height: 16),
-                Text(value),
-                ValueListenableBuilder<String>(
-                  valueListenable: thoughts,
-                  builder: (_, text, _) => text.isEmpty
-                      ? const SizedBox.shrink()
-                      : Padding(
-                          padding: const EdgeInsets.only(top: 12),
-                          child: SizedBox(
-                            height: 120,
-                            width: 360,
-                            child: SingleChildScrollView(
-                              child: AiResponseText(
-                                data: text,
-                                live: true,
-                                maxHeight: 120,
-                                selectable: true,
-                                styleSheet:
-                                    MarkdownStyleSheet.fromTheme(
-                                      Theme.of(context),
-                                    ).copyWith(
-                                      p: Theme.of(context).textTheme.bodySmall,
-                                    ),
-                                imageBuilder: (_, _, _) =>
-                                    const Text('[Image omitted]'),
-                              ),
-                            ),
-                          ),
-                        ),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(onPressed: token.cancel, child: const Text('Cancel')),
-          ],
-        ),
-      ),
-    );
-    AiMessage? reduced;
-    String? errorMessage;
-    try {
-      reduced = await const AiInputReduction().summarize(
-        prepared: prepared,
-        budget: budget,
-        partBudget: aiInputBudget(summarySettings),
-        profileId: _profileId!,
-        engine: engine,
-        cancellationToken: token,
-        onProgress: (part, total, pass) {
-          progress.value = 'Pass $pass · part $part of $total';
-          thoughtRefresh?.cancel();
-          thoughtRefresh = null;
-          thoughtBuffer = StringBuffer();
-          thoughts.value = '';
-        },
-        onThinking: (delta) {
-          thoughtBuffer.write(delta);
-          thoughtRefresh ??= Timer(const Duration(milliseconds: 100), () {
-            thoughtRefresh = null;
-            thoughts.value = thoughtBuffer.toString();
-          });
-        },
-      );
-    } on AiException catch (error) {
-      errorMessage = error.message;
-    } catch (_) {
-      errorMessage =
-          'Unable to summarize the input. Please try a smaller file.';
-    } finally {
-      _preparationToken = null;
-      if (mounted) {
-        Navigator.of(context).pop();
-        await dialog;
-      }
-      thoughtRefresh?.cancel();
-      progress.dispose();
-      thoughts.dispose();
-    }
-    if (!mounted) return;
-    if (token.isCancelled) {
-      _notice('Summarization cancelled. Your original draft is unchanged.');
-      return;
-    }
-    if (reduced == null) {
-      _notice(errorMessage!);
-      return;
-    }
-    final prompt = await _editText(
-      'Review shortened prompt',
-      reduced.text,
-      action: 'Use summary',
-      note: 'I don’t recommend summarizing with this AI tool because it might miss important information. Review and edit the shortened prompt before sending.',
-    );
-    if (!mounted || prompt == null) return;
-    try {
-      checkAiInputBudget(AiMessage(role: AiRole.user, text: prompt), settings);
-    } on AiException catch (error) {
-      _notice(error.message);
-      return;
-    }
-    setState(() {
-      _composer.text = prompt;
-      _attachments.clear();
-      _draftPrivate = reduced!.containsPrivateContext;
-      _draftRetryIndex = retryIndex;
-    });
   }
 
   Future<void> _send({AiMessage? edited, int? retryUserIndex}) async {
@@ -765,12 +683,18 @@ class _AiChatScreenState extends ConsumerState<_AiChatPane>
       _notice('Create a provider profile in AI settings first.');
       return;
     }
+    final draftChatId = _chat!.active?.id;
     final retryIndex = retryUserIndex ?? _draftRetryIndex;
     AiMessage? prepared;
-    final settings = _settings!.load().settings;
+    final settings = _responseSettings();
+    final preparationToken = _preparationToken = AiCancellationToken();
     setState(() => _preparing = true);
     try {
-      prepared = await prepareAiInput(message, _inputCapabilities());
+      prepared = await prepareAiInput(
+        message,
+        _inputCapabilities(),
+        cancellationToken: preparationToken,
+      );
       if (_profile!.kind != AiProviderKind.offline) {
         checkAiInputBudget(prepared, settings);
       }
@@ -820,6 +744,7 @@ class _AiChatScreenState extends ConsumerState<_AiChatPane>
       );
       return;
     } finally {
+      _preparationToken = null;
       if (mounted) setState(() => _preparing = false);
     }
     if (!mounted) return;
@@ -831,6 +756,7 @@ class _AiChatScreenState extends ConsumerState<_AiChatPane>
       retryUserIndex: retryIndex,
       onAccepted: () {
         if (edited == null && mounted) {
+          unawaited(_workspace!.saveDraft(draftChatId, ''));
           setState(() {
             _composer.clear();
             _attachments.clear();
@@ -851,1188 +777,27 @@ class _AiChatScreenState extends ConsumerState<_AiChatPane>
     }
   }
 
-  Future<void> _showDiagnostics(AiChatMessage message) async {
-    await showDialog<void>(
-      context: context,
-      useRootNavigator: false,
-      builder: (context) => AlertDialog(
-        icon: const Icon(Icons.troubleshoot_rounded),
-        title: const Text('Provider response details'),
-        content: SizedBox(
-          width: 680,
-          child: SingleChildScrollView(
-            child: SelectableText(
-              message.diagnostics ??
-                  'No provider diagnostics were captured for this response.',
-              style: const TextStyle(fontFamily: 'monospace'),
-            ),
-          ),
-        ),
-        actions: [
-          TextButton.icon(
-            onPressed: () => Clipboard.setData(
-              ClipboardData(text: message.diagnostics ?? message.error ?? ''),
-            ),
-            icon: const Icon(Icons.copy_outlined),
-            label: const Text('Copy details'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _retry(int index, {bool edit = false}) async {
-    final messages = _chat!.active!.messages;
-    var user = index;
-    while (user >= 0 && messages[user].message.role != AiRole.user) {
-      user--;
-    }
-    if (user < 0) return;
-    final original = messages[user].message;
-    final message = edit
-        ? await showDialog<AiMessage>(
-            context: context,
-            useRootNavigator: false,
-            builder: (_) => _AiEditMessageDialog(message: original),
-          )
-        : original;
-    if (message == null) return;
-    await _send(edited: message, retryUserIndex: user);
-  }
-
-  Future<void> _sync() async {
-    setState(() => _syncing = true);
-    try {
-      final status =
-          await (widget.sync?.call() ??
-              ref.read(deviceSyncProvider.notifier).syncAiChats());
-      await _chat!.refresh();
-      if (_chat!.active != null) await _chat!.select(_chat!.active!.id);
-      _notice(status);
-    } on AiChatSyncLimit {
-      _notice(
-        'Shared chats exceed the 32 MiB sync limit. Stop sharing some conversations and retry.',
-      );
-    } catch (_) {
-      _notice(
-        'Chat sync failed. Enable chat sync on both paired devices and check the connection.',
-      );
-    } finally {
-      if (mounted) setState(() => _syncing = false);
-    }
-  }
-
-  Future<String?> _createFolder() async {
-    final name = await _editText('New folder', '', action: 'Create folder');
-    if (name == null) return null;
-    try {
-      await _chat!.store.saveFolder(name);
-      await _chat!.refresh();
-      return name.trim();
-    } on FormatException catch (error) {
-      _notice(error.message);
-      return null;
-    }
-  }
-
-  Future<String?> _chooseFolder(String current) async {
-    final folders = await _chat!.store.folders();
-    if (!mounted) return null;
-    final selected = await showDialog<String>(
-      context: context,
-      useRootNavigator: false,
-      builder: (context) => SimpleDialog(
-        title: const Text('Move to folder'),
-        children: [
-          SizedBox(
-            width: 360,
-            height: 300,
-            child: ListView(
-              children: [
-                ListTile(
-                  leading: const Icon(Icons.chat_bubble_outline),
-                  title: const Text('No folder'),
-                  trailing: current.isEmpty ? const Icon(Icons.check) : null,
-                  onTap: () => Navigator.pop(context, ''),
-                ),
-                for (final folder in folders)
-                  ListTile(
-                    leading: const Icon(Icons.folder_outlined),
-                    title: Text(folder.name),
-                    trailing: folder.name == current
-                        ? const Icon(Icons.check)
-                        : null,
-                    onTap: () => Navigator.pop(context, folder.name),
-                  ),
-                ListTile(
-                  leading: const Icon(Icons.create_new_folder_outlined),
-                  title: const Text('New folder'),
-                  onTap: () => Navigator.pop(context, '\u0000new'),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-    if (selected == '\u0000new') return _createFolder();
-    return selected;
-  }
-
-  Future<void> _historyAction(
-    AiConversation summary,
-    _HistoryAction action,
-  ) async {
-    if (_chat!.busy || _preparing) return;
-    try {
-      final conversation = await _chat!.store.get(summary.id);
-      if (conversation == null || conversation.deleted) return;
-      final folder = action == _HistoryAction.move
-          ? await _chooseFolder(conversation.folder)
-          : null;
-      if (action == _HistoryAction.move && folder == null) return;
-      await _chat!.store.save(
-        conversation.copyWith(
-          pinned: action == _HistoryAction.pin ? !conversation.pinned : null,
-          folder: folder,
-        ),
-        expectedRevision: conversation.revision,
-      );
-      await _chat!.refresh();
-    } catch (_) {
-      _notice('Unable to update this chat. Please try again.');
-    }
-  }
-
-  Widget _history({bool drawer = false}) {
-    final chat = _chat!;
-    return Column(
-      children: [
-        ListTile(
-          title: const Text('Conversations'),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              IconButton(
-                tooltip: 'New folder',
-                icon: const Icon(Icons.create_new_folder_outlined),
-                onPressed: chat.busy || _preparing
-                    ? null
-                    : () async {
-                        final name = await _createFolder();
-                        if (name != null) {
-                          chat.folder = name;
-                          await chat.refresh();
-                        }
-                      },
-              ),
-              IconButton(
-                tooltip: 'New chat',
-                icon: const Icon(Icons.edit_square),
-                onPressed: chat.busy || _preparing
-                    ? null
-                    : () {
-                        chat.newChat();
-                        _composer.clear();
-                        _attachments.clear();
-                        _draftPrivate = false;
-                        if (drawer) Navigator.pop(context);
-                      },
-              ),
-            ],
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: TextField(
-            controller: _search,
-            decoration: const InputDecoration(
-              prefixIcon: Icon(Icons.search),
-              hintText: 'Search chats and messages',
-            ),
-            onChanged: (q) {
-              _debounce?.cancel();
-              _debounce = Timer(const Duration(milliseconds: 250), () {
-                chat.query = q;
-                unawaited(chat.refresh());
-              });
-            },
-          ),
-        ),
-        SwitchListTile(
-          title: const Text('Archived'),
-          value: chat.showArchived,
-          onChanged: chat.busy
-              ? null
-              : (v) {
-                  chat.showArchived = v;
-                  unawaited(chat.refresh());
-                },
-        ),
-        Expanded(
-          child: ListView(
-            children: [
-              ListTile(
-                title: const Text('All chats'),
-                leading: const Icon(Icons.forum_outlined),
-                selected: chat.folder == null,
-                onTap: chat.busy || _preparing
-                    ? null
-                    : () {
-                        chat.folder = null;
-                        unawaited(chat.refresh());
-                      },
-              ),
-              for (final folder in chat.folders)
-                ListTile(
-                  title: Text(
-                    folder.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  leading: const Icon(Icons.folder_outlined),
-                  selected: chat.folder == folder.name,
-                  trailing: IconButton(
-                    tooltip: folder.pinned ? 'Unpin folder' : 'Pin folder',
-                    icon: Icon(
-                      folder.pinned ? Icons.push_pin : Icons.push_pin_outlined,
-                      size: 18,
-                    ),
-                    onPressed: chat.busy || _preparing
-                        ? null
-                        : () async {
-                            await chat.store.saveFolder(
-                              folder.name,
-                              pinned: !folder.pinned,
-                            );
-                            await chat.refresh();
-                          },
-                  ),
-                  onTap: chat.busy || _preparing
-                      ? null
-                      : () {
-                          chat.folder = folder.name;
-                          unawaited(chat.refresh());
-                        },
-                ),
-              const Divider(indent: 16, endIndent: 16),
-
-              if (chat.conversations.isEmpty)
-                const ListTile(title: Text('No conversations found')),
-              ...chat.conversations.map(
-                (c) => ListTile(
-                  selected: c.id == chat.active?.id,
-                  leading: Icon(
-                    c.pinned ? Icons.push_pin : Icons.chat_bubble_outline,
-                  ),
-                  title: Text(
-                    c.title,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  subtitle: c.folder.isEmpty ? null : Text(c.folder),
-                  trailing: PopupMenuButton<_HistoryAction>(
-                    tooltip: 'Chat actions: ${c.title}',
-                    enabled: !chat.busy && !_preparing,
-                    onSelected: (action) => _historyAction(c, action),
-                    itemBuilder: (_) => [
-                      PopupMenuItem(
-                        value: _HistoryAction.pin,
-                        child: Text(c.pinned ? 'Unpin chat' : 'Pin chat'),
-                      ),
-                      const PopupMenuItem(
-                        value: _HistoryAction.move,
-                        child: Text('Move to folder'),
-                      ),
-                    ],
-                  ),
-                  onTap: chat.busy
-                      ? null
-                      : () async {
-                          await _select(c);
-                          if (drawer && mounted) Navigator.pop(context);
-                        },
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  String _elapsed(int milliseconds) {
-    final seconds = milliseconds / 1000;
-    return seconds < 60
-        ? '${seconds.toStringAsFixed(1)}s'
-        : '${seconds ~/ 60}m ${(seconds % 60).toStringAsFixed(0)}s';
-  }
-
-  Widget _message(AiChatMessage m, int index) {
-    final assistant = m.message.role == AiRole.assistant;
-    final last = index == _chat!.active!.messages.length - 1;
-    final scheme = Theme.of(context).colorScheme;
-    final thoughts = m.thinking ?? (last ? _chat!.thinkingText : '');
-    return Align(
-      alignment: assistant ? Alignment.centerLeft : Alignment.centerRight,
-      child: Container(
-        constraints: const BoxConstraints(maxWidth: 768),
-        margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-        child: Column(
-          crossAxisAlignment: assistant
-              ? CrossAxisAlignment.start
-              : CrossAxisAlignment.end,
-          children: [
-            if (assistant)
-              Padding(
-                padding: const EdgeInsets.only(left: 12, bottom: 6),
-                child: Text(
-                  'DayArk${m.model == null ? '' : ' · ${m.model}'}',
-                  style: Theme.of(context).textTheme.labelMedium,
-                ),
-              ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                color: assistant
-                    ? Colors.transparent
-                    : scheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(24),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (thoughts.isNotEmpty)
-                    Material(
-                      key: ValueKey('thinking-${m.id}'),
-                      color: Colors.transparent,
-                      child: ExpansionTile(
-                        tilePadding: EdgeInsets.zero,
-                        initiallyExpanded:
-                            m.state == AiChatMessageState.pending,
-                        minTileHeight: 32,
-                        title: Text(
-                          _chat!.activity == 'Thinking…'
-                              ? 'Thinking…'
-                              : 'Model thinking',
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                        children: [
-                          ConstrainedBox(
-                            constraints: const BoxConstraints(maxHeight: 240),
-                            child: SingleChildScrollView(
-                              child: AiResponseText(
-                                data: thoughts,
-                                live: m.state == AiChatMessageState.pending,
-                                maxHeight: 220,
-                                selectable: true,
-                                styleSheet:
-                                    MarkdownStyleSheet.fromTheme(
-                                      Theme.of(context),
-                                    ).copyWith(
-                                      p: Theme.of(context).textTheme.bodySmall,
-                                    ),
-                                imageBuilder: (_, _, _) =>
-                                    const Text('[Image omitted]'),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  if (m.state == AiChatMessageState.pending &&
-                      m.message.text == '…')
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        ),
-                        const SizedBox(width: 10),
-                        Flexible(
-                          child: Text(
-                            _chat!.activity ?? 'Waiting for model…',
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                        ),
-                      ],
-                    )
-                  else if (m.state == AiChatMessageState.failed)
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: scheme.errorContainer.withValues(alpha: .55),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            m.error ??
-                                'The provider could not complete this reply.',
-                            style: TextStyle(color: scheme.onErrorContainer),
-                          ),
-                        ],
-                      ),
-                    )
-                  else if (m.message.text.isNotEmpty)
-                    AiResponseText(
-                      key: ValueKey('answer-${m.id}'),
-                      data: m.message.text,
-                      live: m.state == AiChatMessageState.pending,
-                      selectable: true,
-                      // Model-generated remote images must never trigger hidden network requests.
-                      imageBuilder: (uri, title, alt) =>
-                          Text('[Image: ${alt ?? title ?? uri.toString()}]'),
-                      onTapLink: (text, href, title) async {
-                        final uri = Uri.tryParse(href ?? '');
-                        if (uri?.scheme == 'dayark-source') {
-                          final memory = await sharedMemoryManager();
-                          if (!mounted) return;
-                          await showMemorySource(
-                            context,
-                            memory,
-                            uri!.path,
-                            hash: uri.queryParameters['hash'],
-                            offset: int.tryParse(
-                              uri.queryParameters['offset'] ?? '',
-                            ),
-                          );
-                          return;
-                        }
-                        if (uri != null &&
-                            ['https', 'http'].contains(uri.scheme) &&
-                            uri.userInfo.isEmpty) {
-                          final yes = await showDialog<bool>(
-                            context: context,
-                            useRootNavigator: false,
-                            builder: (context) => AlertDialog(
-                              title: const Text('Open external link?'),
-                              content: Text(uri.toString()),
-                              actions: [
-                                TextButton(
-                                  onPressed: () =>
-                                      Navigator.pop(context, false),
-                                  child: const Text('Cancel'),
-                                ),
-                                FilledButton(
-                                  onPressed: () => Navigator.pop(context, true),
-                                  child: const Text('Open'),
-                                ),
-                              ],
-                            ),
-                          );
-                          if (yes == true) {
-                            launchUrl(
-                              uri,
-                              mode: LaunchMode.externalApplication,
-                            );
-                          }
-                        }
-                      },
-                    ),
-                  ...m.message.attachments.map(
-                    (a) => Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: a.kind == AiAttachmentKind.image
-                          ? Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Image.memory(
-                                  a.bytes!,
-                                  height: 160,
-                                  cacheHeight: 320,
-                                  errorBuilder: (_, _, _) =>
-                                      const Icon(Icons.broken_image),
-                                ),
-                                Text(a.name ?? 'Image'),
-                              ],
-                            )
-                          : Text(
-                              '📎 ${a.name ?? 'Document'} · ${(a.bytes!.length / 1024).toStringAsFixed(0)} KiB',
-                            ),
-                    ),
-                  ),
-                  if (m.error != null &&
-                      m.state != AiChatMessageState.failed &&
-                      m.message.text != m.error)
-                    Text(m.error!),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Wrap(
-                crossAxisAlignment: WrapCrossAlignment.center,
-                alignment: assistant ? WrapAlignment.start : WrapAlignment.end,
-                spacing: 2,
-                children: [
-                  if (m.state == AiChatMessageState.pending ||
-                      m.state == AiChatMessageState.stopped ||
-                      (assistant && m.thinkingOnly))
-                    Text(
-                      m.state == AiChatMessageState.pending
-                          ? 'Generating · '
-                          : m.state == AiChatMessageState.stopped
-                          ? 'Stopped · '
-                          : 'Model stopped after thinking; no final answer. ',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  Text(
-                    '${DateFormat('MMM d, h:mm a').format(m.createdAt.toLocal())}${m.elapsedMilliseconds == null ? '' : ' · ${_elapsed(m.elapsedMilliseconds!)} response'}',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                  IconButton(
-                    tooltip: m.message.text.isEmpty && thoughts.isNotEmpty
-                        ? 'Copy thoughts'
-                        : 'Copy message',
-                    visualDensity: VisualDensity.compact,
-                    onPressed: () => Clipboard.setData(
-                      ClipboardData(
-                        text: m.message.text.isEmpty
-                            ? thoughts
-                            : m.message.text,
-                      ),
-                    ),
-                    icon: const Icon(Icons.copy_outlined, size: 17),
-                  ),
-                  if (!assistant)
-                    IconButton(
-                      tooltip: 'Edit message',
-                      visualDensity: VisualDensity.compact,
-                      onPressed: _chat!.busy || _preparing
-                          ? null
-                          : () => _retry(index, edit: true),
-                      icon: const Icon(Icons.edit_outlined, size: 18),
-                    ),
-                  if (assistant && last)
-                    IconButton(
-                      tooltip: m.state == AiChatMessageState.complete
-                          ? 'Regenerate response'
-                          : 'Retry response',
-                      visualDensity: VisualDensity.compact,
-                      onPressed: _chat!.busy || _preparing
-                          ? null
-                          : () => _retry(index),
-                      icon: const Icon(Icons.refresh_rounded, size: 19),
-                    ),
-                  if (m.state == AiChatMessageState.failed)
-                    IconButton(
-                      tooltip: 'Response error details',
-                      visualDensity: VisualDensity.compact,
-                      onPressed: () => _showDiagnostics(m),
-                      icon: Icon(
-                        Icons.error_outline_rounded,
-                        size: 19,
-                        color: scheme.error,
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   @override
-  Widget build(BuildContext context) {
-    final chat = _chat;
-    if (chat == null) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('AI Chat')),
-        body: Center(
-          child: _error == null
-              ? const CircularProgressIndicator()
-              : Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(_error!),
-                    TextButton(onPressed: _init, child: const Text('Retry')),
-                  ],
-                ),
-        ),
-      );
-    }
-    final wide = MediaQuery.sizeOf(context).width >= 900;
-    final keyboard = MediaQuery.viewInsetsOf(context).bottom > 0;
-    final availableHeight =
-        MediaQuery.sizeOf(context).height -
-        MediaQuery.viewInsetsOf(context).bottom;
-    final compact = availableHeight < 420;
-    final c = chat.active;
-    final inputCapabilities = _profile == null ? null : _inputCapabilities();
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Theme.of(context).colorScheme.surface,
-        scrolledUnderElevation: 0,
-        title: TextButton(
-          onPressed: (chat.busy || _preparing) ? null : _chooseProfile,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Flexible(
-                child: Text(
-                  _profile?.modelId ?? 'DayArk AI',
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-              ),
-              const SizedBox(width: 4),
-              const Icon(Icons.keyboard_arrow_down_rounded, size: 20),
-            ],
-          ),
-        ),
-        actions: [
-          IconButton(
-            tooltip: 'Chat preferences',
-            onPressed: (chat.busy || _preparing) || _syncing
-                ? null
-                : _chatPreferences,
-            icon: const Icon(Icons.tune_rounded),
-          ),
-          IconButton(
-            tooltip: 'Memory & knowledge',
-            onPressed: (chat.busy || _preparing)
-                ? null
-                : () => Navigator.push<void>(
-                    context,
-                    MaterialPageRoute(builder: (_) => const MemoryScreen()),
-                  ),
-            icon: const Icon(Icons.psychology_outlined),
-          ),
-          IconButton(
-            tooltip: 'AI settings',
-            onPressed: (chat.busy || _preparing) ? null : _settingsPage,
-            icon: const Icon(Icons.settings_outlined),
-          ),
-          if (c != null)
-            PopupMenuButton<String>(
-              enabled: !(chat.busy || _preparing) && !_syncing,
-              onSelected: _action,
-              itemBuilder: (_) => [
-                const PopupMenuItem(value: 'rename', child: Text('Rename')),
-                PopupMenuItem(
-                  value: 'pin',
-                  child: Text(c.pinned ? 'Unpin' : 'Pin'),
-                ),
-                PopupMenuItem(
-                  value: 'archive',
-                  child: Text(c.archived ? 'Unarchive' : 'Archive'),
-                ),
-                const PopupMenuItem(
-                  value: 'folder',
-                  child: Text('Move to folder'),
-                ),
-                const PopupMenuItem(
-                  value: 'json',
-                  child: Text('Export JSON (includes attachments)'),
-                ),
-                const PopupMenuItem(
-                  value: 'md',
-                  child: Text('Export Markdown'),
-                ),
-                const PopupMenuItem(value: 'txt', child: Text('Export text')),
-                const PopupMenuItem(value: 'delete', child: Text('Delete')),
-              ],
-            ),
-        ],
-      ),
-      drawer: wide
-          ? null
-          : Drawer(child: SafeArea(child: _history(drawer: true))),
-      body: Row(
-        children: [
-          if (wide)
-            SizedBox(
-              width: 304,
-              child: Material(
-                color: Theme.of(context).colorScheme.surfaceContainerLowest,
-                child: Container(
-                  decoration: BoxDecoration(
-                    border: Border(
-                      right: BorderSide(
-                        color: Theme.of(context).colorScheme.outlineVariant,
-                      ),
-                    ),
-                  ),
-                  child: _history(),
-                ),
-              ),
-            ),
-          Expanded(
-            child: Column(
-              children: [
-                if (!compact)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 4,
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          _profile?.kind == AiProviderKind.offline
-                              ? Icons.lock_outline
-                              : Icons.cloud_outlined,
-                          size: 14,
-                        ),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            _profile == null
-                                ? 'Choose a model to start'
-                                : _profile!.kind == AiProviderKind.offline
-                                ? 'On-device processing'
-                                : 'Messages are sent to ${_profile!.name}',
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                        ),
-                        if (_profile?.kind == AiProviderKind.ollama ||
-                            _profile?.kind == AiProviderKind.offline)
-                          const Tooltip(
-                            triggerMode: TooltipTriggerMode.tap,
-                            message:
-                                'Local model speed depends on the system running it. '
-                                'For faster responses, choose a lighter model; answer quality may be lower.',
-                            child: Padding(
-                              padding: EdgeInsets.all(8),
-                              child: Icon(Icons.info_outline, size: 18),
-                            ),
-                          ),
-                        IconButton(
-                          tooltip: 'New chat',
-                          onPressed: (chat.busy || _preparing)
-                              ? null
-                              : () {
-                                  chat.newChat();
-                                  _composer.clear();
-                                  setState(() {
-                                    _attachments.clear();
-                                    _draftPrivate = false;
-                                    _draftRetryIndex = null;
-                                  });
-                                },
-                          icon: const Icon(Icons.edit_square, size: 20),
-                        ),
-                      ],
-                    ),
-                  ),
-                if (chat.status != null &&
-                    chat.status != c?.messages.lastOrNull?.error &&
-                    !compact)
-                  Padding(
-                    padding: const EdgeInsets.all(8),
-                    child: Text(
-                      chat.status!,
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.error,
-                      ),
-                    ),
-                  ),
-                Expanded(
-                  child: c == null
-                      ? Center(
-                          child: SingleChildScrollView(
-                            padding: const EdgeInsets.all(24),
-                            child: Container(
-                              constraints: const BoxConstraints(maxWidth: 560),
-                              padding: const EdgeInsets.all(32),
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  CircleAvatar(
-                                    radius: 32,
-                                    backgroundColor: Theme.of(context)
-                                        .colorScheme
-                                        .primary,
-                                    foregroundColor: Theme.of(context)
-                                        .colorScheme
-                                        .onPrimary,
-                                    child: const Icon(
-                                      Icons.auto_awesome_rounded,
-                                      size: 30,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 12),
-                                  Text(
-                                    'How can DayArk help?',
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .headlineSmall
-                                        ?.copyWith(fontWeight: FontWeight.w800),
-                                  ),
-                                  const SizedBox(height: 12),
-                                  const Text(
-                                    'Your personal chat companion. Plan your day, tasks and habits with your own instructions.',
-                                    textAlign: TextAlign.center,
-                                  ),
-                                  const SizedBox(height: 24),
-                                  if (_preferences.profiles.isNotEmpty)
-                                    Wrap(
-                                      spacing: 8,
-                                      runSpacing: 8,
-                                      alignment: WrapAlignment.center,
-                                      children: [
-                                        for (final prompt in [
-                                          'Explain something',
-                                          'Help me write',
-                                          'Brainstorm ideas',
-                                        ])
-                                          ActionChip(
-                                            label: Text(prompt),
-                                            onPressed: () {
-                                              _composer.text = '$prompt: ';
-                                            },
-                                          ),
-                                      ],
-                                    ),
-                                  if (_preferences.profiles.isEmpty)
-                                    FilledButton(
-                                      onPressed: _settingsPage,
-                                      child: const Text('Set up AI'),
-                                    ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        )
-                      : ListView.builder(
-                          controller: _scroll,
-                          reverse: true,
-                          findChildIndexCallback: (key) {
-                            if (key is! ValueKey<String>) return null;
-                            final index = c.messages.indexWhere(
-                              (message) => message.id == key.value,
-                            );
-                            return index < 0
-                                ? null
-                                : c.messages.length - 1 - index;
-                          },
-                          padding: const EdgeInsets.only(bottom: 24),
-                          itemCount: c.messages.length,
-                          itemBuilder: (_, i) {
-                            final index = c.messages.length - 1 - i;
-                            return Center(
-                              key: ValueKey(c.messages[index].id),
-                              child: ConstrainedBox(
-                                constraints: const BoxConstraints(
-                                  maxWidth: 800,
-                                ),
-                                child: _message(c.messages[index], index),
-                              ),
-                            );
-                          },
-                        ),
-                ),
-                if (_attachments.isNotEmpty)
-                  SizedBox(
-                    height: 48,
-                    child: ListView(
-                      scrollDirection: Axis.horizontal,
-                      children: _attachments
-                          .map(
-                            (a) => Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 4,
-                              ),
-                              child: InputChip(
-                                label: Text(a.name ?? 'Attachment'),
-                                onDeleted: (chat.busy || _preparing)
-                                    ? null
-                                    : () => setState(
-                                        () => _attachments.remove(a),
-                                      ),
-                              ),
-                            ),
-                          )
-                          .toList(),
-                    ),
-                  ),
-                if (_attachments.isNotEmpty && !compact)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 4,
-                    ),
-                    child: Text(
-                      'TXT/Markdown become text. PDFs are extracted locally for text-only models. Images require configured vision support. Voice becomes editable text. All converted text counts toward the context limit.',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ),
-                SafeArea(
-                  top: false,
-                  child: Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 800),
-                      child: Container(
-                        margin: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .surfaceContainerLow,
-                          borderRadius: BorderRadius.circular(28),
-                          border: Border.all(
-                            color: Theme.of(context).colorScheme.outlineVariant,
-                          ),
-                        ),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                              ),
-                              child: TextField(
-                                controller: _composer,
-                                enabled: !_syncing && !_preparing,
-                                minLines: 1,
-                                maxLines: compact ? 2 : 6,
-                                decoration: const InputDecoration(
-                                  hintText: 'Message DayArk…',
-                                  filled: false,
-                                  border: InputBorder.none,
-                                  enabledBorder: InputBorder.none,
-                                  focusedBorder: InputBorder.none,
-                                  disabledBorder: InputBorder.none,
-                                ),
-                                textInputAction: TextInputAction.newline,
-                              ),
-                            ),
-                            Row(
-                              children: [
-                                if (inputCapabilities != null)
-                                  IconButton(
-                                    tooltip: 'Attach files',
-                                    onPressed: chat.busy || _preparing
-                                        ? null
-                                        : () => _pick(),
-                                    icon: const Icon(Icons.add_rounded),
-                                  ),
-                                if (inputCapabilities?.attachments.contains(
-                                      AiAttachmentKind.image,
-                                    ) ==
-                                    true)
-                                  IconButton(
-                                    tooltip: 'Attach images',
-                                    onPressed: chat.busy || _preparing
-                                        ? null
-                                        : () => _pick(images: true),
-                                    icon: const Icon(Icons.image_outlined),
-                                  ),
-                                if (_profile != null)
-                                  IconButton(
-                                    tooltip: 'Voice input',
-                                    onPressed:
-                                        (chat.busy || _preparing) || _syncing
-                                        ? null
-                                        : () async {
-                                            final transcript =
-                                                await showDialog<String>(
-                                                  context: context,
-                                                  useRootNavigator: false,
-                                                  barrierDismissible: false,
-                                                  builder: (_) =>
-                                                      VoiceInputDialog(
-                                                        settings: _settings!,
-                                                      ),
-                                                );
-                                            if (!mounted ||
-                                                transcript == null) {
-                                              return;
-                                            }
-                                            _composer.text =
-                                                [_composer.text, transcript]
-                                                    .where((s) => s.isNotEmpty)
-                                                    .join('\n');
-                                          },
-                                    icon: const Icon(Icons.mic_none),
-                                  ),
-                                const Spacer(),
-                                IconButton.filled(
-                                  tooltip: (chat.busy || _preparing)
-                                      ? 'Stop response'
-                                      : 'Send message',
-                                  onPressed: _syncing
-                                      ? null
-                                      : (chat.busy || _preparing)
-                                      ? (_preparing
-                                            ? () => _preparationToken?.cancel()
-                                            : chat.stop)
-                                      : () => _send(),
-                                  icon: Icon(
-                                    (chat.busy || _preparing)
-                                        ? Icons.stop_rounded
-                                        : Icons.arrow_upward_rounded,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                if (!keyboard && !compact)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: Text(
-                      'AI can make mistakes. Check important information.',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) =>
+        _buildWorkspace(context, width: constraints.maxWidth),
+  );
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _debounce?.cancel();
+    _draftTimer?.cancel();
+    _saveDraft();
+    _composer.removeListener(_draftChanged);
+    _composerFocus.dispose();
+    _searchFocus.dispose();
     _preparationToken?.cancel();
     _chat?.removeListener(_changed);
     _chat?.dispose();
     _composer.dispose();
     _search.dispose();
     _scroll.dispose();
-    super.dispose();
-  }
-}
-
-class _AiChatTextDialog extends StatefulWidget {
-  const _AiChatTextDialog({
-    required this.title,
-    required this.initial,
-    required this.action,
-    this.note,
-  });
-  final String title, initial, action;
-  final String? note;
-  @override
-  State<_AiChatTextDialog> createState() => _AiChatTextDialogState();
-}
-
-class _AiChatTextDialogState extends State<_AiChatTextDialog> {
-  late final _input = TextEditingController(text: widget.initial);
-  @override
-  Widget build(BuildContext context) => AlertDialog(
-    title: Text(widget.title),
-    constraints: const BoxConstraints(maxWidth: 560, maxHeight: 560),
-    scrollable: true,
-    content: Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (widget.note != null) Text(widget.note!),
-        TextField(
-          controller: _input,
-          autofocus: true,
-          maxLines:
-              widget.title == 'Your instructions' ||
-                  widget.title == 'Edit message' ||
-                  widget.title == 'Review shortened prompt'
-              ? 6
-              : 1,
-          maxLength: widget.title == 'Rename conversation'
-              ? 200
-              : (widget.title == 'Move to folder' ||
-                    widget.title == 'New folder')
-              ? 100
-              : null,
-        ),
-      ],
-    ),
-    actions: [
-      TextButton(
-        onPressed: () => Navigator.pop(context),
-        child: const Text('Cancel'),
-      ),
-      FilledButton(
-        onPressed: () => Navigator.pop(context, _input.text.trim()),
-        child: Text(widget.action),
-      ),
-    ],
-  );
-  @override
-  void dispose() {
-    _input.dispose();
-    super.dispose();
-  }
-}
-
-class _AiEditMessageDialog extends StatefulWidget {
-  const _AiEditMessageDialog({required this.message});
-  final AiMessage message;
-  @override
-  State<_AiEditMessageDialog> createState() => _AiEditMessageDialogState();
-}
-
-class _AiEditMessageDialogState extends State<_AiEditMessageDialog> {
-  late final _input = TextEditingController(text: widget.message.text);
-  late final _attachments = List<AiAttachment>.of(widget.message.attachments);
-  @override
-  Widget build(BuildContext context) => AlertDialog(
-    title: const Text('Edit message'),
-    scrollable: true,
-    content: Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const Text('Messages after this point will be replaced.'),
-        TextField(
-          controller: _input,
-          autofocus: true,
-          maxLines: 6,
-          onChanged: (_) => setState(() {}),
-        ),
-        Wrap(
-          children: _attachments
-              .map(
-                (a) => InputChip(
-                  label: Text(a.name ?? 'Attachment'),
-                  deleteButtonTooltipMessage: 'Remove attachment',
-                  onDeleted: () => setState(() => _attachments.remove(a)),
-                ),
-              )
-              .toList(),
-        ),
-      ],
-    ),
-    actions: [
-      TextButton(
-        onPressed: () => Navigator.pop(context),
-        child: const Text('Cancel'),
-      ),
-      FilledButton(
-        onPressed: _input.text.trim().isEmpty && _attachments.isEmpty
-            ? null
-            : () => Navigator.pop(
-                context,
-                AiMessage(
-                  role: AiRole.user,
-                  text: _input.text.trim(),
-                  attachments: _attachments,
-                  containsPrivateContext: widget.message.containsPrivateContext,
-                ),
-              ),
-        child: const Text('Save and regenerate'),
-      ),
-    ],
-  );
-  @override
-  void dispose() {
-    _input.dispose();
     super.dispose();
   }
 }

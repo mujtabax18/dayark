@@ -7,6 +7,10 @@ import '../settings/ai_settings.dart';
 import 'ai_attachments.dart';
 import 'ai_capabilities.dart';
 import 'ai_error.dart';
+import 'ai_document_cache.dart';
+import 'ai_cancellation.dart';
+
+final aiDocumentTextCache = AiDocumentTextCache();
 
 class AiInputTooLarge extends AiException {
   AiInputTooLarge({
@@ -58,17 +62,21 @@ void checkAiInputBudget(AiMessage prepared, AiSettings settings) {
 /// Text-only models receive extracted text rather than unsupported PDF bytes.
 Future<AiMessage> prepareAiInput(
   AiMessage message,
-  AiCapabilities capabilities,
-) async {
+  AiCapabilities capabilities, {
+  AiCancellationToken? cancellationToken,
+}) async {
+  cancellationToken?.throwIfCancelled();
   final text = StringBuffer(message.text);
   final attachments = <AiAttachment>[];
   for (final attachment in message.attachments) {
+    cancellationToken?.throwIfCancelled();
     validateAiAttachment(attachment);
     if (attachment.mimeType == 'application/pdf' &&
         !capabilities.attachments.contains(AiAttachmentKind.document)) {
-      final extracted = await DocumentIngestion.extract(
-        'attachment.pdf',
+      final extracted = await aiDocumentTextCache.extract(
         attachment.bytes!,
+        () => DocumentIngestion.extract('attachment.pdf', attachment.bytes!),
+        checkCancellation: cancellationToken?.throwIfCancelled,
       );
       text.write(
         '\n\n[Untrusted extracted PDF: ${attachment.name ?? 'document'}]\n$extracted\n[End extracted PDF]',

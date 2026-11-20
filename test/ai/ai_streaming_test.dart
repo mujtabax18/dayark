@@ -216,10 +216,10 @@ void main() {
     );
     expect(events.last.response!.message.text, isEmpty);
     expect(events.last.response!.finishReason, 'length');
-    expect(bodies.single['options']['num_predict'], -1);
+    expect(bodies.single['options']['num_predict'], 1024);
   });
 
-  test('saved shared output cap does not truncate configured Ollama chat', () async {
+  test('configured Ollama chat honors saved and temporary output budgets', () async {
     SharedPreferences.setMockInitialValues({});
     FlutterSecureStorage.setMockInitialValues({});
     final store = AiSettingsStore(
@@ -252,7 +252,7 @@ void main() {
         )
         .toList();
     expect(events.last.response!.message.text, 'Ready');
-    expect(bodies.single['options']['num_predict'], -1);
+    expect(bodies.single['options']['num_predict'], 2048);
     expect(bodies.single['think'], isTrue);
     expect(store.load().settings.maxOutputTokens, 2048);
     await AiConfiguredAssistant(store)
@@ -261,7 +261,7 @@ void main() {
           settingsOverride: AiSettings(maxOutputTokens: 128),
         )
         .toList();
-    expect(bodies.last['options']['num_predict'], -1);
+    expect(bodies.last['options']['num_predict'], 128);
   });
 
   test('Ollama thinking is opt-in and hidden reasoning emits activity instead of a false timeout', () async {
@@ -293,7 +293,7 @@ void main() {
         .stream(request(p, model: 'qwen3.5:2b'))
         .toList();
     expect(bodies.last['think'], isFalse);
-    expect(bodies.last['options']['num_predict'], -1);
+    expect(bodies.last['options']['num_predict'], 1024);
     expect(events.where((e) => e.isActivity), hasLength(2));
     expect(
       events.where((e) => e.isActivity).map((e) => e.thinking).join(),

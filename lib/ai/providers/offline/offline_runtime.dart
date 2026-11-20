@@ -15,6 +15,7 @@ class AiLocalModel {
     this.estimatedMemoryBytes,
     this.gpuLayers,
     this.performance,
+    this.supportsThinkingControl = false,
   }) : name = name ?? id {
     if (id.trim().isEmpty ||
         path.trim().isEmpty ||
@@ -26,9 +27,11 @@ class AiLocalModel {
       );
     }
   }
+  final bool supportsThinkingControl;
   final String id;
   final String name;
   final String path;
+
   /// Null requests automatic GGUF and hardware detection on native load.
   final int? contextSize;
   final int? nativeContextSize, fileType, estimatedMemoryBytes, gpuLayers;
@@ -50,7 +53,12 @@ abstract interface class AiStreamingOfflineRuntime {
 
 /// Numeric-only measurements from successful ordinary inference.
 class AiLocalPerformance {
-  const AiLocalPerformance({required this.contextSize, this.tokensPerSecond, this.peakProcessRssBytes, this.loadMilliseconds});
+  const AiLocalPerformance({
+    required this.contextSize,
+    this.tokensPerSecond,
+    this.peakProcessRssBytes,
+    this.loadMilliseconds,
+  });
   final int contextSize;
   final double? tokensPerSecond;
   final int? peakProcessRssBytes, loadMilliseconds;

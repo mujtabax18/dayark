@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:path/path.dart' as p;
+import 'package:uuid/uuid.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../core/ai_cancellation.dart';
@@ -34,7 +35,10 @@ Future<AiLocalModels> _create() async {
 
 class NativeAiLocalModels extends AiLocalModels {
   NativeAiLocalModels(this.manager, {this.hardwareProbe = detectAiHardware}) {
-    provider.onPerformanceChanged = notifyListeners;
+    provider.onPerformanceChanged = () {
+      loadedId = provider.loadedModelId;
+      notifyListeners();
+    };
   }
   final Future<AiHardwareReport> Function({required String storagePath})
   hardwareProbe;
@@ -147,6 +151,21 @@ class NativeAiLocalModels extends AiLocalModels {
     status = 'Model loaded.';
   });
   @override
+  bool get supportsImport => true;
+  @override
+  Future<void> importFile(String path, {required String name}) =>
+      _run((token) async {
+        final result = await manager.importFile(
+          path,
+          id: 'import-${const Uuid().v4()}',
+          name: name,
+          cancellationToken: token,
+        );
+        installed = [...installed, _record(result)];
+        status =
+            'Imported locally. Load the model to verify runtime compatibility.';
+      });
+  @override
   Future<void> unload() => _run((token) async {
     await manager.unload();
     loadedId = null;
@@ -171,7 +190,7 @@ class NativeAiLocalModels extends AiLocalModels {
     );
     loadedId = id;
     benchmark =
-        '${result.outputTokensPerSecond?.toStringAsFixed(1) ?? 'Unknown'} tokens/s · '
+        '${result.outputTokensPerSecond?.toStringAsFixed(1) ?? 'Unknown'} tokens/s end-to-end (includes prompt) · '
         '${result.loadTime.inMilliseconds} ms load · ${(result.sampledPeakRssBytes / aiGiB).toStringAsFixed(2)} GiB process peak RAM';
     status = 'Benchmark complete. Model remains loaded.';
   });

@@ -9,6 +9,7 @@ import '../core/ai_stream.dart';
 import '../models/ai_models.dart';
 import 'ai_chat_store.dart';
 import 'ai_conversation.dart';
+import 'ai_generation_state.dart';
 
 typedef AiChatStream = Stream<AiStreamEvent> Function({
   required AiMessage message,
@@ -17,10 +18,30 @@ typedef AiChatStream = Stream<AiStreamEvent> Function({
   required AiCancellationToken cancellationToken,
 });
 
+class AiQueuedMessage {
+  AiQueuedMessage({
+    required this.message,
+    required this.profileId,
+    this.provider,
+    this.model,
+  });
+  AiMessage message;
+  final String profileId;
+  final String? provider, model;
+}
+
 class AiChatController extends ChangeNotifier {
   AiChatController({required this.store, required this.engine}) {
     _subscription = store.changes.listen((_) {
-      if (!_disposed) unawaited(refresh());
+      if (!_disposed) {
+        unawaited(
+          refresh().catchError((Object _) {
+            status =
+                'Unable to refresh conversations. Check storage and retry.';
+            _notify();
+          }),
+        );
+      }
     });
   }
   final AiChatStore store;
@@ -29,6 +50,10 @@ class AiChatController extends ChangeNotifier {
   AiConversation? active;
   List<AiConversation> conversations = [];
   List<AiChatFolder> folders = [];
+  AiGenerationState generationState = AiGenerationState.idle;
+  final List<AiQueuedMessage> queue = [];
+  Completer<void>? _settled;
+  int _requestId = 0;
   bool busy = false, showArchived = false;
   String query = '';
   String? folder, status;
@@ -96,8 +121,10 @@ class AiChatController extends ChangeNotifier {
       );
     }
     if (_disposed || busy || version != _selectionVersion) return;
+    if (active?.id != value.id) queue.clear();
     active = value;
     thinkingText = '';
+    generationState = AiGenerationState.idle;
     status = null;
     _notify();
   }
@@ -106,7 +133,9 @@ class AiChatController extends ChangeNotifier {
     if (busy) return;
     ++_selectionVersion;
     active = null;
+    queue.clear();
     thinkingText = '';
+    generationState = AiGenerationState.idle;
     status = null;
     _notify();
   }
@@ -127,6 +156,7 @@ class AiChatController extends ChangeNotifier {
           updatedAt: DateTime.now().toUtc(),
           messages: c.messages,
           profileId: c.profileId,
+          instructions: c.instructions,
         ),
         expectedRevision: 0,
       );
@@ -138,6 +168,7 @@ class AiChatController extends ChangeNotifier {
   Future<void> update({
     String? title,
     String? folder,
+    String? instructions,
     bool? pinned,
     bool? archived,
     String? profileId,
@@ -148,6 +179,7 @@ class AiChatController extends ChangeNotifier {
       active!.copyWith(
         title: title,
         folder: folder,
+        instructions: instructions,
         pinned: pinned,
         archived: archived,
         profileId: profileId,
@@ -179,13 +211,17 @@ class AiChatController extends ChangeNotifier {
       _notify();
       return false;
     }
+    final requestId = ++_requestId;
+    final settled = _settled = Completer<void>();
+    final token = AiCancellationToken();
+    generationState = AiGenerationState.preparing;
     var accepted = false;
     ++_selectionVersion;
     busy = true;
     status = null;
     activity = 'Waiting for model…';
     thinkingText = '';
-    _token = AiCancellationToken();
+    _token = token;
     _notify();
     try {
       var c =
@@ -206,7 +242,20 @@ class AiChatController extends ChangeNotifier {
         message: message,
         createdAt: DateTime.now().toUtc(),
       );
+      final previousReply = retryUserIndex == null
+          ? null
+          : c.messages
+                .skip(retryUserIndex + 1)
+                .where((m) => m.message.role == AiRole.assistant)
+                .firstOrNull;
+      final versions = previousReply == null
+          ? <String>[]
+          : [
+              ...previousReply.versions,
+              previousReply.message.text,
+            ].reversed.take(10).toList().reversed.toList();
       final reply = AiChatMessage(
+        versions: versions,
         id: const Uuid().v4(),
         message: AiMessage(role: AiRole.assistant, text: '…'),
         createdAt: DateTime.now().toUtc(),
@@ -232,7 +281,9 @@ class AiChatController extends ChangeNotifier {
       final history = previous
           .where(
             (m) =>
-                m.state == AiChatMessageState.complete &&
+                (m.state == AiChatMessageState.complete ||
+                    (m.state == AiChatMessageState.stopped &&
+                        m.message.text != m.error)) &&
                 (m.message.text.trim().isNotEmpty ||
                     m.message.attachments.isNotEmpty),
           )
@@ -243,6 +294,7 @@ class AiChatController extends ChangeNotifier {
       final providerDiagnostics = StringBuffer();
       final watch = Stopwatch()..start();
       AiResponse? complete;
+      int? firstTokenMilliseconds, firstVisibleTokenMilliseconds;
       var dirty = false;
       var eventsSinceYield = 0;
       final workSlice = Stopwatch()..start();
@@ -282,11 +334,12 @@ class AiChatController extends ChangeNotifier {
       }
 
       try {
+        generationState = AiGenerationState.processingPrompt;
         await for (final event in engine(
           message: message,
           history: history,
           profileId: profileId,
-          cancellationToken: _token!,
+          cancellationToken: token,
         )) {
           // A fast socket or buffered stream can otherwise monopolize microtasks.
           // Yield to input, painting and cancellation without discarding any output.
@@ -295,9 +348,26 @@ class AiChatController extends ChangeNotifier {
             eventsSinceYield = 0;
             workSlice.reset();
           }
-          _token!.throwIfCancelled();
+          token.throwIfCancelled();
+          if (_disposed || requestId != _requestId) return accepted;
+          if (event.text.isNotEmpty || (event.thinking?.isNotEmpty ?? false)) {
+            firstTokenMilliseconds ??= watch.elapsedMilliseconds;
+          }
+          if (event.text.isNotEmpty) {
+            firstVisibleTokenMilliseconds ??= watch.elapsedMilliseconds;
+          }
           if (event.isActivity) {
-            activity = event.thinking?.isNotEmpty == true
+            generationState = event.thinking?.isNotEmpty == true
+                ? AiGenerationState.thinking
+                : AiGenerationState.processingPrompt;
+            if (event.diagnostic == 'Loading model…') {
+              generationState = AiGenerationState.loadingModel;
+            }
+            activity =
+                event.diagnostic == 'Loading model…' ||
+                    event.diagnostic == 'Processing prompt…'
+                ? event.diagnostic
+                : event.thinking?.isNotEmpty == true
                 ? 'Thinking…'
                 : 'Model is working…';
             if (event.thinking case final value? when value.isNotEmpty) {
@@ -316,7 +386,10 @@ class AiChatController extends ChangeNotifier {
             complete = event.response;
           } else {
             buffer.write(event.text);
-            if (event.text.isNotEmpty) activity = 'Receiving response…';
+            if (event.text.isNotEmpty) {
+              activity = 'Generating response…';
+              generationState = AiGenerationState.generating;
+            }
           }
           if (event.text.isNotEmpty) {
             schedulePublish();
@@ -324,14 +397,21 @@ class AiChatController extends ChangeNotifier {
           }
         }
         publish();
-        _token!.throwIfCancelled();
+        token.throwIfCancelled();
         if (complete == null) {
           throw const AiException(
             AiErrorCode.invalidResponse,
             'The response ended before completion.',
           );
         }
+        generationState = AiGenerationState.completed;
         final finished = AiChatMessage(
+          versions: versions,
+          outputTokens: complete.usage.outputTokens,
+          inputTokens: complete.usage.inputTokens,
+          finishReason: complete.finishReason,
+          firstTokenMilliseconds: firstTokenMilliseconds,
+          firstVisibleTokenMilliseconds: firstVisibleTokenMilliseconds,
           id: reply.id,
           message: complete.message,
           thinkingOnly: complete.thinkingOnly,
@@ -351,9 +431,12 @@ class AiChatController extends ChangeNotifier {
         );
       } catch (error) {
         publish();
-        final cancelled = _token!.isCancelled;
+        final cancelled = token.isCancelled;
+        generationState = cancelled
+            ? AiGenerationState.interrupted
+            : AiGenerationState.failed;
         final safe = cancelled
-            ? 'Response stopped. Retry to generate again.'
+            ? 'Response stopped. Continue or regenerate when ready.'
             : error is AiException
             ? error.message
             : 'Unable to complete response. Retry this message.';
@@ -390,8 +473,10 @@ class AiChatController extends ChangeNotifier {
         );
       }
     } on FormatException catch (error) {
+      generationState = AiGenerationState.failed;
       status = error.message;
     } catch (_) {
+      generationState = AiGenerationState.failed;
       status = 'Unable to save this chat. Check storage and retry.';
     } finally {
       _streamPublish?.cancel();
@@ -399,13 +484,174 @@ class AiChatController extends ChangeNotifier {
       busy = false;
       activity = null;
       _token = null;
-      await refresh();
+      try {
+        if (!_disposed) await refresh();
+      } catch (_) {
+        generationState = AiGenerationState.failed;
+        status = 'Unable to refresh conversations. Check storage and retry.';
+      } finally {
+        if (!settled.isCompleted) settled.complete();
+      }
       _notify();
+      if (!_disposed &&
+          !busy &&
+          requestId == _requestId &&
+          generationState == AiGenerationState.completed &&
+          queue.isNotEmpty) {
+        final next = queue.removeAt(0);
+        unawaited(
+          send(
+            next.message,
+            profileId: next.profileId,
+            provider: next.provider,
+            model: next.model,
+          ),
+        );
+      }
     }
     return accepted;
   }
 
-  void stop() => _token?.cancel();
+  void stop() {
+    if (!busy) return;
+    generationState = AiGenerationState.cancelling;
+    activity = 'Cancelling request…';
+    _token?.cancel();
+    _notify();
+  }
+
+  bool enqueue(AiQueuedMessage value) {
+    if (!busy || queue.length >= 10) return false;
+    queue.add(value);
+    _notify();
+    return true;
+  }
+
+  Future<void> sendQueued() async {
+    if (busy || queue.isEmpty || _disposed) return;
+    final next = queue.removeAt(0);
+    await send(
+      next.message,
+      profileId: next.profileId,
+      provider: next.provider,
+      model: next.model,
+    );
+  }
+
+  void removeQueued(int index) {
+    queue.removeAt(index);
+    _notify();
+  }
+
+  void editQueued(int index, String text) {
+    if (text.trim().isEmpty) return;
+    final old = queue[index].message;
+    queue[index].message = AiMessage(
+      role: AiRole.user,
+      text: text.trim(),
+      attachments: old.attachments,
+      containsPrivateContext: old.containsPrivateContext,
+    );
+    _notify();
+  }
+
+  void moveQueued(int from, int to) {
+    final value = queue.removeAt(from);
+    queue.insert(to, value);
+    _notify();
+  }
+
+  /// Providers do not support live injection. Settle cancellation before restart.
+  Future<void> redirect(
+    String instruction, {
+    required String? profileId,
+    String? provider,
+    String? model,
+  }) async {
+    final conversationId = active?.id;
+    final settled = _settled?.future;
+    stop();
+    await settled;
+    if (_disposed || active?.id != conversationId || busy) return;
+    await send(
+      AiMessage(role: AiRole.user, text: instruction),
+      profileId: profileId,
+      provider: provider,
+      model: model,
+    );
+  }
+
+  Future<void> bookmark(
+    String messageId, {
+    bool? saved,
+    String? note,
+    List<String>? tags,
+  }) async {
+    if (busy || active == null) return;
+    await _persist(
+      active!.copyWith(
+        messages: active!.messages.map(
+          (m) => m.id == messageId
+              ? m.copyWith(
+                  bookmarked: saved ?? !m.bookmarked,
+                  note: note,
+                  tags: tags,
+                )
+              : m,
+        ),
+      ),
+    );
+  }
+
+  Future<void> restoreVersion(String messageId, int version) async {
+    if (busy || active == null) return;
+    await _persist(
+      active!.copyWith(
+        messages: active!.messages.map((message) {
+          if (message.id != messageId ||
+              version < 0 ||
+              version >= message.versions.length) {
+            return message;
+          }
+          final selected = message.versions[version];
+          // Only answer text is retained for old versions. Do not attribute
+          // the current generation's telemetry to a restored answer.
+          return AiChatMessage(
+            id: message.id,
+            createdAt: message.createdAt,
+            bookmarked: message.bookmarked,
+            note: message.note,
+            tags: message.tags,
+            message: AiMessage(role: AiRole.assistant, text: selected),
+            versions: [
+              ...message.versions.take(version),
+              ...message.versions.skip(version + 1),
+              message.message.text,
+            ].take(10).toList(),
+          );
+        }),
+      ),
+    );
+  }
+
+  Future<void> branch(int index) async {
+    if (busy || active == null) return;
+    final source = active!;
+    active = await store.save(
+      AiConversation(
+        id: const Uuid().v4(),
+        title:
+            '${source.title.substring(0, source.title.length.clamp(0, 175))} (branch)',
+        updatedAt: DateTime.now().toUtc(),
+        profileId: source.profileId,
+        instructions: source.instructions,
+        messages: source.messages.take(index + 1),
+        shareWithDevices: false,
+      ),
+      expectedRevision: 0,
+    );
+    await refresh();
+  }
 
   static void _appendBounded(StringBuffer target, String value) {
     const limit = 64 * 1024;

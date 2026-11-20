@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 
+import 'ai_code_block.dart';
+
 /// Incrementally seals small Markdown blocks. Raw text is never discarded.
 /// Fence state is carried across blocks so long code listings stay code listings.
 class AiMarkdownBlocks {
@@ -145,6 +147,7 @@ class _AiResponseTextState extends State<AiResponseText> {
   Widget _markdown(String text) => MarkdownBody(
     data: text,
     selectable: widget.selectable,
+    builders: {'pre': AiCodeBlockBuilder()},
     styleSheet: widget.styleSheet,
     onTapLink: widget.onTapLink,
     imageBuilder:

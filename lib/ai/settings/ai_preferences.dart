@@ -177,4 +177,7 @@ AiSettings settingsForCapabilities(
   responseLanguage: settings.responseLanguage,
   inputLanguage: settings.inputLanguage,
   thinking: capabilities.thinking ? settings.thinking : null,
+  performanceProfile: settings.performanceProfile,
+  useMemory: settings.useMemory,
+  idleTimeoutMinutes: settings.idleTimeoutMinutes,
 );

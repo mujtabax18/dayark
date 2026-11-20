@@ -1,5 +1,3 @@
-import '../../settings/ai_settings.dart';
-
 import '../../core/ai_stream.dart';
 import '../../core/ai_attachments.dart';
 
@@ -40,12 +38,17 @@ class OfflineAiProvider implements AiManagedProvider, AiStreamingProvider {
   Future<void>? _active;
   AiCancellationToken? _activeToken;
   void Function()? onPerformanceChanged;
+  Timer? _idleTimer;
+  String? loadedModelId;
+  Duration? idleTimeout = const Duration(minutes: 5);
   bool _closed = false;
   Future<void>? _disposal;
 
   @override
-  AiCapabilities capabilitiesFor(String modelId) =>
-      AiCapabilities(contextWindow: true);
+  AiCapabilities capabilitiesFor(String modelId) => AiCapabilities(
+    contextWindow: true,
+    thinking: _models[modelId]?.supportsThinkingControl ?? false,
+  );
 
   AiLocalModel _model(String? modelId) {
     final model = modelId == null
@@ -71,8 +74,9 @@ class OfflineAiProvider implements AiManagedProvider, AiStreamingProvider {
 
   Future<T> _exclusive<T>(
     AiCancellationToken token,
-    Future<T> Function(AiOfflineRuntime) operation,
-  ) async {
+    Future<T> Function(AiOfflineRuntime) operation, {
+    bool keepWarm = true,
+  }) async {
     _ensureOpen();
     token.throwIfCancelled();
     if (_active != null) {
@@ -81,6 +85,7 @@ class OfflineAiProvider implements AiManagedProvider, AiStreamingProvider {
         'Local AI engine is busy.',
       );
     }
+    _idleTimer?.cancel();
     final done = Completer<void>();
     _active = done.future;
     _activeToken = token;
@@ -98,6 +103,19 @@ class OfflineAiProvider implements AiManagedProvider, AiStreamingProvider {
       _active = null;
       _activeToken = null;
       done.complete();
+      final timeout = idleTimeout;
+      if (!_closed && keepWarm && timeout != null) {
+        _idleTimer = Timer(timeout, () {
+          if (_closed || _active != null) return;
+          unawaited(
+            _exclusive(AiCancellationToken(), (runtime) async {
+              await runtime.dispose();
+              loadedModelId = null;
+              onPerformanceChanged?.call();
+            }, keepWarm: false).catchError((Object _) {}),
+          );
+        });
+      }
     }
   }
 
@@ -109,6 +127,7 @@ class OfflineAiProvider implements AiManagedProvider, AiStreamingProvider {
     request = _prepare(request);
     final model = _model(request.selection.modelId);
     await runtime.load(model, cancellationToken);
+    loadedModelId = model.id;
     cancellationToken.throwIfCancelled();
     final response = await runtime.generate(request, cancellationToken);
     onPerformanceChanged?.call();
@@ -139,15 +158,7 @@ class OfflineAiProvider implements AiManagedProvider, AiStreamingProvider {
         'Offline adapter currently accepts text only.',
       );
     }
-    // Offline settings follow the selected model, not the shared online window.
-    final settings = request.settings.toJson();
-    settings['contextWindowTokens'] = null;
-    return AiRequest(selection: request.selection, messages: request.messages,
-      settings: AiSettings.fromJson(settings),
-      allowRemoteProcessing: request.allowRemoteProcessing,
-      containsPrivateContext: request.containsPrivateContext,
-      allowPrivateContextOnline: request.allowPrivateContextOnline);
-
+    return request;
   }
 
   @override
@@ -163,10 +174,14 @@ class OfflineAiProvider implements AiManagedProvider, AiStreamingProvider {
         unawaited(
           _exclusive(localToken, (runtime) async {
                 final prepared = _prepare(request);
+                controller.add(
+                  const AiStreamEvent.activity(diagnostic: 'Loading model…'),
+                );
                 await runtime.load(
                   _model(request.selection.modelId),
                   localToken,
                 );
+                loadedModelId = request.selection.modelId;
                 localToken.throwIfCancelled();
                 if (runtime is AiStreamingOfflineRuntime) {
                   await for (final event
@@ -225,7 +240,10 @@ class OfflineAiProvider implements AiManagedProvider, AiStreamingProvider {
           selection: AiModelSelection(providerId: id, modelId: model.id),
           name: model.name,
           capabilities: capabilitiesFor(model.id),
-          inputTokenLimit: model.activeContextSize ?? model.contextSize ?? model.nativeContextSize,
+          inputTokenLimit:
+              model.activeContextSize ??
+              model.contextSize ??
+              model.nativeContextSize,
         ),
       ),
     );
@@ -237,6 +255,7 @@ class OfflineAiProvider implements AiManagedProvider, AiStreamingProvider {
     required AiCancellationToken cancellationToken,
   }) => _exclusive(cancellationToken, (runtime) async {
     await runtime.load(_model(modelId), cancellationToken);
+    loadedModelId = _model(modelId).id;
     cancellationToken.throwIfCancelled();
   });
 
@@ -252,7 +271,8 @@ class OfflineAiProvider implements AiManagedProvider, AiStreamingProvider {
   Future<void> unloadModel({AiCancellationToken? cancellationToken}) =>
       _exclusive(cancellationToken ?? AiCancellationToken(), (runtime) async {
         await runtime.dispose();
-      });
+        loadedModelId = null;
+      }, keepWarm: false);
 
   /// Serializes file replacement/deletion against native loading and inference.
   /// On failure the old registration survives and can be loaded again.
@@ -262,6 +282,7 @@ class OfflineAiProvider implements AiManagedProvider, AiStreamingProvider {
     AiCancellationToken? cancellationToken,
   }) => _exclusive(cancellationToken ?? AiCancellationToken(), (runtime) async {
     await runtime.dispose();
+    loadedModelId = null;
     final replacement = await mutation();
     if (replacement != null && replacement.id != modelId) {
       throw ArgumentError('Replacement model ID differs.');
@@ -277,8 +298,10 @@ class OfflineAiProvider implements AiManagedProvider, AiStreamingProvider {
   Future<void> dispose() => _disposal ??= _dispose();
   Future<void> _dispose() async {
     _closed = true;
+    _idleTimer?.cancel();
     _activeToken?.cancel();
     await _active;
     await _runtime?.dispose();
+    loadedModelId = null;
   }
 }

@@ -248,12 +248,12 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Local model manager'), findsOneWidget);
       expect(find.textContaining('gemma-4-E4B-it'), findsOneWidget);
-      expect(find.text('Maximum output tokens'), findsNothing);
+      expect(find.text('Maximum output tokens'), findsOneWidget);
       expect(
-        find.textContaining('Local output follows the model'),
+        find.textContaining('Output limits include reasoning tokens'),
         findsOneWidget,
       );
-      expect(find.text('4096 tokens'), findsOneWidget);
+      expect(find.text('Automatic context window'), findsOneWidget);
       await tester.tap(find.text('Provider and model defaults'));
       await tester.pumpAndSettle();
       await tester.enterText(
@@ -513,10 +513,7 @@ void main() {
       );
       await tester.tap(download);
       await tester.pumpAndSettle();
-      expect(
-        find.textContaining('Not recommended for this device:'),
-        findsOneWidget,
-      );
+      expect(find.textContaining('Estimated model memory'), findsOneWidget);
       await tester.tap(find.text('Cancel'));
       await tester.pumpAndSettle();
       final unsupported = UiModels(supported: false);
@@ -536,7 +533,7 @@ void main() {
       expect(
         find.descendant(
           of: find.byType(AlertDialog),
-          matching: find.textContaining('embedded runtime is unsupported'),
+          matching: find.textContaining('local runtime is unavailable'),
         ),
         findsOneWidget,
       );

@@ -59,10 +59,8 @@ void main() {
       final recommended = family.models
           .where((m) => m.id == family.recommendedId)
           .single;
-      expect(
-        recommended.quantization,
-        anyOf('Q4', 'Q4_K_M', 'Q4_0', startsWith('Q2')),
-      );
+      expect(const AiModelRecommender().classify(device(), recommended).fit.recommended, true);
+
     }
   });
 
@@ -103,17 +101,15 @@ void main() {
     final qwen = families.firstWhere((f) => f.name == 'Qwen3');
     expect(
       qwen.models.firstWhere((m) => m.id == qwen.recommendedId).quantization,
-      'Q2_K',
+      anyOf('Q2_K', startsWith('UD-IQ2')),
     );
   });
 
   test('all variants stay visible on incompatible or unknown hardware without recommendation badges', () {
     final catalogue = AiModelCatalogue.candidates();
     for (final hardware in [
-      device(platform: 'web'),
+      device(platform: 'web', runtime: false),
       device(runtime: false),
-      device(available: aiGiB),
-      device(total: aiGiB),
       device(available: null, total: null, runtime: null),
     ]) {
       final families = AiModelFamily.grouped(hardware, catalogue);

@@ -15,7 +15,6 @@ import 'package:metersystem/ai/chat/ai_chat_controller.dart';
 import 'package:metersystem/ai/chat/ai_chat_store.dart';
 import 'package:metersystem/ai/chat/ai_conversation.dart';
 import 'package:metersystem/screens/navigation/widgets/desktop_navigation_scope.dart';
-import 'package:metersystem/utlis/app_router.dart';
 
 class FailingChatStore extends AiChatStore {
   FailingChatStore(super.database);
@@ -129,6 +128,8 @@ void main() {
     'chat exposes prompts and persists the extra prompt switch on mobile',
     (tester) async {
       await open(tester, mobile: true);
+      await tester.tap(find.byTooltip('Prompt controls'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Your instructions'));
       await tester.pumpAndSettle();
       await tester.enterText(
@@ -145,6 +146,8 @@ void main() {
         contains('DayArk tasks'),
       );
 
+      await tester.tap(find.byTooltip('Prompt controls'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('View prompts'));
       await tester.pumpAndSettle();
       expect(
@@ -153,7 +156,9 @@ void main() {
       );
       await tester.tap(find.text('Close'));
       await tester.pumpAndSettle();
-      await tester.tap(find.byType(Switch));
+      await tester.tap(find.byTooltip('Prompt controls'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Disable extra prompt'));
       await tester.pumpAndSettle();
       expect(settings.load().settings.sendAdditionalPrompt, isFalse);
       expect(settings.load().profiles, hasLength(2));
@@ -162,6 +167,8 @@ void main() {
         contains('DayArk tasks'),
       );
 
+      await tester.tap(find.byTooltip('Prompt controls'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('View prompts'));
       await tester.pumpAndSettle();
       expect(find.textContaining('You are the DayArk assistant'), findsNothing);
@@ -245,7 +252,7 @@ void main() {
       await send(tester, 'Question one');
       expect(find.byType(MarkdownBody), findsNWidgets(2));
       expect(find.text('[Image: blocked]'), findsOneWidget);
-      await tester.tap(find.widgetWithText(TextButton, 'small'));
+      await tester.tap(find.widgetWithText(TextButton, 'Local'));
       await tester.pumpAndSettle();
       await tester.enterText(
         find.widgetWithText(TextField, 'Search models'),
@@ -307,7 +314,9 @@ void main() {
       await tester.pump(const Duration(milliseconds: 500));
       await tester.pumpAndSettle();
       expect((await chats.list()).single.title, 'My chat');
-      await tester.tap(find.byTooltip('Chat preferences'));
+      await tester.tap(find.byTooltip('Conversation actions'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Chat preferences'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Automatic paired-device sync'));
       await tester.pumpAndSettle();
@@ -937,7 +946,13 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('AI settings'));
     await tester.pump();
-    expect(openedRoute, RoutesStr.aiSettings);
+    expect(openedRoute, isNull);
+    await tester.pumpAndSettle();
+    expect(find.byType(AiSettingsScreen), findsOneWidget);
+    await tester.tap(find.byTooltip('Back'));
+    await tester.pumpAndSettle();
+    expect(find.byType(AiSettingsScreen), findsNothing);
+    expect(find.text('How can DayArk help?'), findsOneWidget);
     expect(find.byType(AiChatScreen), findsOneWidget);
   });
 }

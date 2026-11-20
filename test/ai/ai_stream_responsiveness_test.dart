@@ -167,7 +167,7 @@ void main() {
       );
       expect(heartbeats, greaterThan(5));
       expect(events, greaterThanOrEqualTo(count * 2));
-      expect(requestBody!['options']['num_predict'], -1);
+      expect(requestBody!['options']['num_predict'], 1024);
       final saved = (await store.get(controller.active!.id))!.messages.last;
       expect(saved.message.text, fragment * count);
       expect(saved.thinking, fragment * count);

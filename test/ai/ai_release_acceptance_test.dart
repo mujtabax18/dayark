@@ -115,7 +115,7 @@ void main() {
       final request = local.requests.last;
       expect(request.selection.modelId, i == 1 ? 'beta' : 'alpha');
       expect(request.settings.temperature, .4);
-      expect(request.settings.maxOutputTokens, isNull);
+      expect(request.settings.maxOutputTokens, 128);
       expect(settings.load().settings.maxOutputTokens, 128);
       expect(
         request.messages.map((m) => m.text).join(),

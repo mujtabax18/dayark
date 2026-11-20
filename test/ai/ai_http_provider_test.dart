@@ -303,7 +303,7 @@ void main() {
       expect(calls.single.headers.value('authorization'), 'Bearer test-secret');
       expect(calls.single.body!['options'], {
         'temperature': 0.5,
-        'num_predict': -1,
+        'num_predict': 32,
         'num_ctx': 2048,
       });
     },

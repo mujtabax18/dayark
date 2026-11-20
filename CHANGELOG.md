@@ -4,6 +4,22 @@ Notable changes are recorded here. Older entries are summarized from the maintai
 
 ## [Unreleased]
 
+- Fix chat's shared scroll-controller assertion when toggling the sidebar or changing layout breakpoints; retain one message viewport and guard scroll reads during attachment transitions.
+- Add a saved Enter to send switch under AI Settings → General. Shift+Enter inserts a newline; Ctrl/Cmd+Enter remains available.
+- Open Models immediately with loading, error and Retry states; make AI settings return directly to the chat that opened it without switching the desktop settings section.
+- Hide Back to DayArk on desktop sidebars and drawers while retaining mobile drawer navigation.
+
+- Fix AI Chat startup blocking on GGUF verification/hardware detection: initialize native models and memory on request, bound required storage startup, and keep slow model preparation cancellable.
+- Add Back to DayArk inside the AI chat sidebar/drawer, including during loading and errors. Keep the mobile toolbar menu button and return direct chat links to Home.
+
+- Redesign AI chat for phones and desktop with a collapsible/resizable sidebar, optional runtime inspector, compact composer and keyboard controls.
+- Restore offline/Ollama output budgets, reserve answer context, default native thinking off, reuse prompt prefixes and throttle RSS sampling.
+- Add performance profiles, idle model release, bounded drafts/PDF extraction caching, bookmarks, notes/tags, prompt templates, branches and response versions.
+- Add cancellation-safe redirect/answer-now, continuation and sequential editable message queues; retain partial responses and reject stale events.
+- Add model-library search, sections, favourites, filters, sorting, comparison, storage totals and verified local GGUF import.
+- Add code block copy/save/wrap/expand controls and preserve existing sync, model integrity checks and cloud consent.
+- Add workspace, cache, queue, version, idle-release, import and responsive layout coverage; refresh stale GGUF/runtime test fixtures. See `docs/AI_WORKSPACE.md` for storage compatibility and remaining scope.
+
 - Planned: broader cross-platform validation, UI and performance work, automated regression tests and continued Life Archive refinement.
 
 ## [0.0.39] — Proposed: 2026-11-08 — Open Source Beginning

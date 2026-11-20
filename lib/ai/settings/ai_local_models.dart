@@ -33,6 +33,10 @@ abstract class AiLocalModels extends ChangeNotifier {
   String? get status;
   String? get benchmark;
   bool get supported;
+  bool get supportsImport => false;
+  Future<void> importFile(String path, {required String name}) => Future.error(
+    UnsupportedError('Local GGUF import is unavailable on this platform.'),
+  );
   Future<void> refresh();
   Future<void> install(AiCatalogueModel model);
   Future<void> load(String id);

@@ -161,18 +161,34 @@ extension AiModelFitLabel on AiModelFit {
     AiModelFit.unknown => 'Resources unknown',
     AiModelFit.unsupported => 'Unsupported runtime',
   };
-  bool get recommended => this == AiModelFit.lightweight || this == AiModelFit.smooth;
+  bool get recommended =>
+      this == AiModelFit.lightweight || this == AiModelFit.smooth;
 }
 
 class AiModelRecommendation {
-  AiModelRecommendation(this.model, this.fit, Iterable<String> reasons,
-      {this.verified = false, this.memoryBytes}) : reasons = List.unmodifiable(reasons);
+  AiModelRecommendation(
+    this.model,
+    this.fit,
+    Iterable<String> reasons, {
+    this.verified = false,
+    this.memoryBytes,
+  }) : reasons = List.unmodifiable(reasons);
   final AiCatalogueModel model;
   final AiModelFit fit;
   final List<String> reasons;
   final bool verified;
   final int? memoryBytes;
-  String get label => '${fit.label} · ${verified ? 'Ran on device' : 'Estimated'}';
+  String get label {
+    final resources = switch (fit) {
+      AiModelFit.lightweight => 'Low memory use',
+      AiModelFit.smooth => 'Comfortable memory fit',
+      AiModelFit.balanced => 'Moderate memory use',
+      AiModelFit.heavy => 'High resource use',
+      AiModelFit.veryHeavy => 'Very high resource use',
+      _ => fit.label,
+    };
+    return '$resources · ${verified ? 'Ran on device' : 'Estimated; speed untested'}';
+  }
 }
 
 /// Generic policy thresholds, not a model-specific compatibility table.
@@ -180,39 +196,112 @@ class AiModelRecommendation {
 class AiModelRecommender {
   const AiModelRecommender();
 
-  List<AiModelRecommendation> recommend(AiHardwareReport hardware,
-      AiModelCatalogue catalogue, {int? contextSize, Map<String, AiLocalModel> installed = const {}}) =>
-      List.unmodifiable(catalogue.models.map((m) => classify(hardware, m, installed: installed[m.id])));
+  List<AiModelRecommendation> recommend(
+    AiHardwareReport hardware,
+    AiModelCatalogue catalogue, {
+    int? contextSize,
+    Map<String, AiLocalModel> installed = const {},
+  }) => List.unmodifiable(
+    catalogue.models.map(
+      (m) => classify(hardware, m, installed: installed[m.id]),
+    ),
+  );
 
-  AiModelRecommendation classify(AiHardwareReport hardware, AiCatalogueModel model, {AiLocalModel? installed}) {
+  AiModelRecommendation classify(
+    AiHardwareReport hardware,
+    AiCatalogueModel model, {
+    AiLocalModel? installed,
+  }) {
     final reasons = <String>[];
     final performance = installed?.performance;
     final verified = performance != null;
-    final bytes = installed?.estimatedMemoryBytes ?? model.artifact?.bytes ?? model.estimatedDiskBytes;
+    final bytes =
+        installed?.estimatedMemoryBytes ??
+        model.artifact?.bytes ??
+        model.estimatedDiskBytes;
     // Before the file exists, use a generic overhead allowance. Never pretend
     // catalogued RAM, platform or mobile support flags are runtime facts.
     final estimate = installed?.estimatedMemoryBytes ?? bytes + bytes ~/ 4;
     final total = hardware.totalMemoryBytes;
     final available = hardware.availableMemoryBytes;
-    final budget = total != null ? total * .75 : available != null ? available * .75 : null;
+    final budget = total != null
+        ? total * .75
+        : available != null
+        ? available * .75
+        : null;
     final ratio = budget == null || budget <= 0 ? null : estimate / budget;
-    var fit = ratio == null ? AiModelFit.unknown : ratio < .25 ? AiModelFit.lightweight : ratio < .50 ? AiModelFit.smooth : ratio < .75 ? AiModelFit.balanced : ratio < .90 ? AiModelFit.heavy : AiModelFit.veryHeavy;
+    var fit = ratio == null
+        ? AiModelFit.unknown
+        : ratio < .25
+        ? AiModelFit.lightweight
+        : ratio < .50
+        ? AiModelFit.smooth
+        : ratio < .75
+        ? AiModelFit.balanced
+        : ratio < .90
+        ? AiModelFit.heavy
+        : AiModelFit.veryHeavy;
     // A real success overrides speculative runtime incompatibility.
-    if (!verified && hardware.runtimeSupported == false) fit = AiModelFit.unsupported;
-    final speed = performance?.contextSize == (installed?.activeContextSize ?? installed?.contextSize) ? performance?.tokensPerSecond : null;
-    if (speed != null && speed.isFinite && speed > 0) {
-      final speedFit = speed >= 15 ? AiModelFit.smooth : speed >= 7 ? AiModelFit.balanced : speed >= 3 ? AiModelFit.heavy : AiModelFit.veryHeavy;
-      if (fit == AiModelFit.unknown || fit == AiModelFit.unsupported || speedFit.index > fit.index) fit = speedFit;
-      reasons.add('${speed.toStringAsFixed(1)} tokens/s measured during ordinary inference (including prompt processing).');
+    if (!verified && hardware.runtimeSupported == false) {
+      fit = AiModelFit.unsupported;
     }
-    if (ratio != null) reasons.add('Estimated model memory is ${(ratio * 100).round()}% of the device memory budget.');
-    else reasons.add('Device RAM counters are unavailable; try the model or refresh hardware.');
-    if (available != null && available < estimate && !verified) reasons.add('Current free RAM is below the estimate; close other apps or use a smaller context.');
+    final speed =
+        performance?.contextSize ==
+            (installed?.activeContextSize ?? installed?.contextSize)
+        ? performance?.tokensPerSecond
+        : null;
+    if (speed != null && speed.isFinite && speed > 0) {
+      final speedFit = speed >= 15
+          ? AiModelFit.smooth
+          : speed >= 7
+          ? AiModelFit.balanced
+          : speed >= 3
+          ? AiModelFit.heavy
+          : AiModelFit.veryHeavy;
+      if (fit == AiModelFit.unknown ||
+          fit == AiModelFit.unsupported ||
+          speedFit.index > fit.index) {
+        fit = speedFit;
+      }
+      reasons.add(
+        '${speed.toStringAsFixed(1)} tokens/s measured during ordinary inference (including prompt processing).',
+      );
+    }
+    if (ratio != null) {
+      reasons.add(
+        'Estimated model memory is ${(ratio * 100).round()}% of the device memory budget.',
+      );
+    } else {
+      reasons.add(
+        'Device RAM counters are unavailable; try the model or refresh hardware.',
+      );
+    }
+    if (available != null && available < estimate && !verified) {
+      reasons.add(
+        'Current free RAM is below the estimate; close other apps or use a smaller context.',
+      );
+    }
     final disk = hardware.freeStorageBytes;
-    if (installed == null && disk != null && disk < (model.artifact?.bytes ?? model.estimatedDiskBytes)) reasons.add('Reported free storage is below the download size.');
-    if (fit == AiModelFit.unsupported) reasons.add('The current local runtime is unavailable on this platform.');
-    if (verified) reasons.add('Successfully generated on this device at ${performance!.contextSize} context tokens; no manual benchmark is required.');
-    return AiModelRecommendation(model, fit, reasons, verified: verified, memoryBytes: estimate);
+    if (installed == null &&
+        disk != null &&
+        disk < (model.artifact?.bytes ?? model.estimatedDiskBytes)) {
+      reasons.add('Reported free storage is below the download size.');
+    }
+    if (fit == AiModelFit.unsupported) {
+      reasons.add('The current local runtime is unavailable on this platform.');
+    }
+    if (verified) {
+      reasons.add(
+        'Successfully generated on this device at ${performance.contextSize} context tokens; no manual benchmark is required.',
+      );
+    }
+    return AiModelRecommendation(
+      model,
+      fit,
+      reasons,
+      verified: verified,
+      memoryBytes: estimate,
+    );
   }
 }
 
@@ -301,10 +390,7 @@ class AiModelFamily {
     AiModelCatalogue catalogue, {
     Set<String> excluded = const {},
   }) {
-    final fits = const AiModelRecommender().recommend(
-      hardware,
-      catalogue,
-    );
+    final fits = const AiModelRecommender().recommend(hardware, catalogue);
     final mobile = hardware.platform == 'android' || hardware.platform == 'ios';
     final groups = <String, List<AiCatalogueModel>>{};
     for (final fit in fits) {
@@ -326,15 +412,15 @@ class AiModelFamily {
       // Unknown hardware never earns a recommendation badge.
       final candidates = models
           .where(
-            (m) => fits.any(
-              (f) => f.model.id == m.id && f.fit.recommended,
-            ),
+            (m) => fits.any((f) => f.model.id == m.id && f.fit.recommended),
           )
           .toList();
       candidates.sort((a, b) {
         final rank = byId[a.id]!.fit.index.compareTo(byId[b.id]!.fit.index);
         if (rank != 0) return rank;
-        return mobile ? sizeOf(a).compareTo(sizeOf(b)) : sizeOf(b).compareTo(sizeOf(a));
+        return mobile
+            ? sizeOf(a).compareTo(sizeOf(b))
+            : sizeOf(b).compareTo(sizeOf(a));
       });
       return AiModelFamily(entry.key, models, candidates.firstOrNull?.id);
     }).toList();
